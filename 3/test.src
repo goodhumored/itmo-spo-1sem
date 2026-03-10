@@ -1,0 +1,5 @@
+int simple_test() {
+    int x;
+    x = 5;
+    return x;
+}

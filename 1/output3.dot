@@ -1,0 +1,29 @@
+digraph AST {
+node0x558e88dc0620 [label="source"];
+node0x558e88dc0620 -> node0x558e88dc5ce0;
+node0x558e88dc5ce0 [label="funcDef"];
+node0x558e88dc5ce0 -> node0x558e88dc57e0;
+node0x558e88dc57e0 [label="funcSignature\nsimple"];
+node0x558e88dc57e0 -> node0x558e88dc5700;
+node0x558e88dc5700 [label="builtinType\nint"];
+node0x558e88dc57e0 -> node0x558e88dc5790;
+node0x558e88dc5790 [label="argDefList"];
+node0x558e88dc5ce0 -> node0x558e88dc5870;
+node0x558e88dc5870 [label="block"];
+node0x558e88dc5870 -> node0x558e88dc5a30;
+node0x558e88dc5a30 [label="varDecl"];
+node0x558e88dc5a30 -> node0x558e88dc58c0;
+node0x558e88dc58c0 [label="builtinType\nint"];
+node0x558e88dc5a30 -> node0x558e88dc59c0;
+node0x558e88dc59c0 [label="varList"];
+node0x558e88dc59c0 -> node0x558e88dc5950;
+node0x558e88dc5950 [label="var\nx"];
+node0x558e88dc5870 -> node0x558e88dc5c70;
+node0x558e88dc5c70 [label="exprStmt"];
+node0x558e88dc5c70 -> node0x558e88dc5be0;
+node0x558e88dc5be0 [label="binary\n="];
+node0x558e88dc5be0 -> node0x558e88dc5ae0;
+node0x558e88dc5ae0 [label="identifier\nx"];
+node0x558e88dc5be0 -> node0x558e88dc5b70;
+node0x558e88dc5b70 [label="literal\n5"];
+}

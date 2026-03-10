@@ -1,0 +1,4 @@
+int test() {
+    int[] arr;
+    arr[0] = 5;
+}

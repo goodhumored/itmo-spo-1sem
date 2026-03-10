@@ -1,0 +1,8 @@
+int test_if(int a) {
+    int result;
+    if (a > 5) {
+        result = 100;
+    } else {
+        result = 0;
+    }
+}

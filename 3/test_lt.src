@@ -1,0 +1,8 @@
+int test_lt(int a) {
+    int r2;
+    if (a < 5) {
+        r2 = 1;
+    } else {
+        r2 = 0;
+    }
+}

@@ -1,0 +1,24 @@
+int factorial(int n) {
+    int result;
+    result = 1;
+    while (n > 1) {
+        result = result * n;
+        n = n - 1;
+    }
+}
+
+int max(int a, int b) {
+    int result;
+    if (a > b) {
+        result = a;
+    } else {
+        result = b;
+    }
+}
+
+int main() {
+    int x;
+    int y;
+    x = 5;
+    y = factorial(x);
+}

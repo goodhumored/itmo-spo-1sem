@@ -1,0 +1,3 @@
+build/*.o
+build/codegen/*.o
+program.asm

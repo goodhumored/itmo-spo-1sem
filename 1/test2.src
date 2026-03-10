@@ -1,0 +1,22 @@
+bool check(int val) {
+    bool flag;
+    flag = val > 0x10 & val < 0b1111;
+    if (flag) {
+        flag = !flag;
+    }
+}
+
+test() {
+    int[] arr;
+    arr[0] = 1;
+    arr[1] = 2 * 3 + 4;
+
+    do {
+        arr[0] = arr[0] + 1;
+    } while (arr[0] < 10);
+
+    char c;
+    c = 'x';
+    string s;
+    s = "hello world";
+}

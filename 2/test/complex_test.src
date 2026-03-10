@@ -1,0 +1,27 @@
+int complex_function(int x, int y) {
+    int result;
+    int temp;
+    
+    result = 0;
+    
+    if (x > y) {
+        result = x * 2;
+    } else {
+        result = y + 1;
+        while (result < 10) {
+            result = result + 1;
+        }
+    }
+    
+    return result;
+}
+
+int main() {
+    int a;
+    int b;
+    int res;
+    
+    a = 5;
+    b = 3;
+    res = complex_function(a, b);
+}
