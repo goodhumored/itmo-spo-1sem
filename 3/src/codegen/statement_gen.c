@@ -1,22 +1,15 @@
 #include "statement_gen.h"
 #include "expression_gen.h"
+#include "function_context.h"
 #include <stdio.h>
 #include <string.h>
 
 static void generate_store(FunctionContext *ctx, const char *var_name,
-                          VMRegister value_reg) {
-  int64_t var_offset = get_variable_stack_offset(ctx, var_name);
-  if (var_offset >= 0) {
-    add_instruction(ctx->program, VM_STORE,
-                    vm_create_bp_offset_operand(-var_offset),
+                           VMRegister value_reg) {
+  VMRegister var_reg = get_variable_register(ctx, var_name);
+  if (var_reg != value_reg) {
+    add_instruction(ctx->program, VM_MOV, vm_create_register_operand(var_reg),
                     vm_create_register_operand(value_reg));
-  } else {
-    VMRegister var_reg = get_variable_register(ctx, var_name);
-    if (var_reg != value_reg) {
-      add_instruction(ctx->program, VM_MOV,
-                      vm_create_register_operand(var_reg),
-                      vm_create_register_operand(value_reg));
-    }
   }
 }
 
@@ -24,15 +17,22 @@ void generate_statement(FunctionContext *ctx, ASTNode *stmt) {
   if (!stmt)
     return;
 
+  // Assignment: var = expr
   if (strcmp(stmt->type, AST_BINARY) == 0) {
     if (stmt->value && strcmp(stmt->value, "=") == 0 &&
-        stmt->child_count >= 2) {
-      if (stmt->children[0]->value) {
-        VMRegister temp_reg = allocate_register(&ctx->reg_allocator);
-        generate_expression(ctx, stmt->children[1], temp_reg);
-        generate_store(ctx, stmt->children[0]->value, temp_reg);
-        free_register(&ctx->reg_allocator, temp_reg);
+        stmt->child_count >= 2 && stmt->children[0]->value) {
+
+      // Generate expression into R0, then store to variable's stack location
+      generate_expression(ctx, stmt->children[1], R0);
+
+      int64_t offset = get_variable_stack_offset(ctx, stmt->children[0]->value);
+      if (offset != 0) {
+        add_instruction(ctx->program, VM_STORE,
+                        vm_create_bp_offset_operand(offset),
+                        vm_create_register_operand(R0));
       }
+
+      mark_variable_initialized(ctx, stmt->children[0]->value);
     } else {
       generate_expression(ctx, stmt, R0);
     }
@@ -51,14 +51,22 @@ void generate_statement(FunctionContext *ctx, ASTNode *stmt) {
     return;
   } else if (strcmp(stmt->type, AST_EXPR_STMT) == 0 && stmt->child_count > 0) {
     ASTNode *expr = stmt->children[0];
+
     if (strcmp(expr->type, AST_BINARY) == 0 && expr->value &&
-        strcmp(expr->value, "=") == 0) {
-      if (expr->child_count >= 2 && expr->children[0]->value) {
-        VMRegister temp_reg = allocate_register(&ctx->reg_allocator);
-        generate_expression(ctx, expr->children[1], temp_reg);
-        generate_store(ctx, expr->children[0]->value, temp_reg);
-        free_register(&ctx->reg_allocator, temp_reg);
+        strcmp(expr->value, "=") == 0 &&
+        expr->child_count >= 2 && expr->children[0]->value) {
+
+      // Generate expression into R0, then store to variable's stack location
+      generate_expression(ctx, expr->children[1], R0);
+
+      int64_t offset = get_variable_stack_offset(ctx, expr->children[0]->value);
+      if (offset != 0) {
+        add_instruction(ctx->program, VM_STORE,
+                        vm_create_bp_offset_operand(offset),
+                        vm_create_register_operand(R0));
       }
+
+      mark_variable_initialized(ctx, expr->children[0]->value);
     } else {
       generate_expression(ctx, expr, R0);
     }
@@ -67,10 +75,16 @@ void generate_statement(FunctionContext *ctx, ASTNode *stmt) {
     ASTNode *right = stmt->children[1];
 
     if (left && left->value) {
-      VMRegister temp_reg = allocate_register(&ctx->reg_allocator);
-      generate_expression(ctx, right, temp_reg);
-      generate_store(ctx, left->value, temp_reg);
-      free_register(&ctx->reg_allocator, temp_reg);
+      generate_expression(ctx, right, R0);
+
+      int64_t offset = get_variable_stack_offset(ctx, left->value);
+      if (offset != 0) {
+        add_instruction(ctx->program, VM_STORE,
+                        vm_create_bp_offset_operand(offset),
+                        vm_create_register_operand(R0));
+      }
+
+      mark_variable_initialized(ctx, left->value);
     }
   }
 }

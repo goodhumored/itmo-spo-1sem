@@ -36,17 +36,20 @@ static void init_operand(FunctionContext *ctx, Operand *ir_op, VMRegister target
                       vm_create_immediate_operand((int32_t)ir_op->value.const_val));
       break;
     case OPND_VAR: {
-      int64_t var_offset = get_variable_stack_offset(ctx, ir_op->value.name);
-      if (var_offset >= 0) {
-        add_instruction(ctx->program, VM_LOAD,
-                        vm_create_register_operand(target_reg),
-                        vm_create_bp_offset_operand(-var_offset));
-      } else {
-        VMRegister var_reg = get_variable_register(ctx, ir_op->value.name);
-        if (var_reg != target_reg) {
-          add_instruction(ctx->program, VM_MOV,
+      int64_t offset = get_variable_stack_offset(ctx, ir_op->value.name);
+      if (offset != 0) {
+        // Load variable from stack into target register
+        if (target_reg != R0) {
+          add_instruction(ctx->program, VM_LOAD,
                           vm_create_register_operand(target_reg),
-                          vm_create_register_operand(var_reg));
+                          vm_create_bp_offset_operand(offset));
+        }
+      } else {
+        uint32_t var_ram_addr = get_variable_ram_address(ctx, ir_op->value.name);
+        if (var_ram_addr > 0 && target_reg != R0) {
+          add_instruction(ctx->program, VM_LOAD,
+                          vm_create_register_operand(target_reg),
+                          vm_create_memory_operand(var_ram_addr));
         }
       }
       break;
@@ -94,45 +97,43 @@ static void generate_single_operation(FunctionContext *ctx, Operation *op) {
                       vm_create_register_operand(right_reg));
       break;
     case OP_LT:
-      add_instruction(ctx->program, VM_CMP,
-                      vm_create_register_operand(left_reg),
-                      vm_create_register_operand(right_reg));
-      break;
     case OP_GT:
+    case OP_EQ:
       add_instruction(ctx->program, VM_CMP,
                       vm_create_register_operand(left_reg),
                       vm_create_register_operand(right_reg));
       break;
     case OP_STORE:
-      // op1 is value, op2 is destination (variable)
+      // op1 is value (in R0), op2 is destination (variable)
       if (op->op2.kind == OPND_VAR) {
-        int64_t var_offset = get_variable_stack_offset(ctx, op->op2.value.name);
-        if (var_offset >= 0) {
+        int64_t offset = get_variable_stack_offset(ctx, op->op2.value.name);
+        if (offset != 0) {
           add_instruction(ctx->program, VM_STORE,
-                          vm_create_bp_offset_operand(-var_offset),
-                          vm_create_register_operand(left_reg));
+                          vm_create_bp_offset_operand(offset),
+                          vm_create_register_operand(R0));
         } else {
-          VMRegister var_reg = get_variable_register(ctx, op->op2.value.name);
-          if (left_reg != var_reg) {
-            add_instruction(ctx->program, VM_MOV,
-                            vm_create_register_operand(var_reg),
-                            vm_create_register_operand(left_reg));
+          uint32_t var_ram_addr = get_variable_ram_address(ctx, op->op2.value.name);
+          if (var_ram_addr > 0) {
+            add_instruction(ctx->program, VM_STORE,
+                            vm_create_memory_operand(var_ram_addr),
+                            vm_create_register_operand(R0));
           }
         }
       }
       break;
     case OP_CONST:
-      // Load constant into destination
-      if (op->dest.kind != OPND_UNDEF) {
-        VMRegister reg;
-        if (op->dest.kind == OPND_TEMP) {
-          reg = get_temp_register(ctx, op->dest.value.temp_id);
-        } else {
-          reg = R0;
+      // Load constant into R0, then store to destination
+      add_instruction(ctx->program, VM_MOV,
+                      vm_create_register_operand(R0),
+                      vm_create_immediate_operand((int32_t)op->op1.value.const_val));
+
+      if (op->dest.kind == OPND_VAR) {
+        int64_t offset = get_variable_stack_offset(ctx, op->dest.value.name);
+        if (offset != 0) {
+          add_instruction(ctx->program, VM_STORE,
+                          vm_create_bp_offset_operand(offset),
+                          vm_create_register_operand(R0));
         }
-        add_instruction(ctx->program, VM_MOV,
-                        vm_create_register_operand(reg),
-                        vm_create_immediate_operand((int32_t)op->op1.value.const_val));
       }
       break;
     case OP_CALL:
@@ -212,7 +213,7 @@ static void generate_single_operation(FunctionContext *ctx, Operation *op) {
           
           // Определяем conditional jump based on cmp_type
           VMInstructionType jump_type = VM_JE;
-          
+
           switch (op->cmp_type) {
             case OP_LT:
               jump_type = VM_JL;  // Jump if Less (true means left < right)
@@ -220,7 +221,9 @@ static void generate_single_operation(FunctionContext *ctx, Operation *op) {
             case OP_GT:
               jump_type = VM_JG;  // Jump if Greater (true means left > right)
               break;
-            // TODO: Add more comparison types
+            case OP_EQ:
+              jump_type = VM_JE;  // Jump if Equal (true means left == right)
+              break;
             default:
               jump_type = VM_JE;  // Default to equal
               break;
@@ -243,15 +246,12 @@ static void generate_single_operation(FunctionContext *ctx, Operation *op) {
   // Store result if needed
   if (op->dest.kind != OPND_UNDEF && op->type != OP_STORE && op->type != OP_CONST) {
     if (op->dest.kind == OPND_VAR) {
-      VMRegister var_reg = get_variable_register(ctx, op->dest.value.name);
-      if (left_reg != var_reg) {
-        add_instruction(ctx->program, VM_MOV,
-                        vm_create_register_operand(var_reg),
-                        vm_create_register_operand(left_reg));
+      int64_t offset = get_variable_stack_offset(ctx, op->dest.value.name);
+      if (offset != 0) {
+        add_instruction(ctx->program, VM_STORE,
+                        vm_create_bp_offset_operand(offset),
+                        vm_create_register_operand(R0));
       }
-    } else if (op->dest.kind == OPND_TEMP) {
-      // Result already in left_reg (or we need to move it)
-      // For now, keep it in the register
     }
   }
 }
@@ -283,10 +283,12 @@ static void generate_conditional_jump_from_comparison(FunctionContext *ctx,
     case OP_GT:
       jump_type = VM_JG;
       break;
+    case OP_EQ:
+      jump_type = VM_JE;
+      break;
     // TODO: Add more comparison types when implemented
     // case OP_LE:
     // case OP_GE:
-    // case OP_EQ:
     // case OP_NE:
     default:
       // For now, default to JE (can be improved later)
@@ -405,6 +407,33 @@ void generate_function_code(FunctionContext *ctx, CFG *cfg) {
   }
 }
 
+// Helper: Check if a CFG has any real operations (excluding empty blocks)
+static int function_has_body(CFG *cfg) {
+  if (!cfg || !cfg->blocks || cfg->block_count == 0)
+    return 0;
+
+  for (int i = 0; i < cfg->block_count; i++) {
+    BasicBlock *block = cfg->blocks[i];
+    if (!block)
+      continue;
+
+    for (int j = 0; j < block->op_count; j++) {
+      Operation *op = block->operations[j];
+      if (!op)
+        continue;
+
+      // Skip NOP operations
+      if (op->type == OP_NOP)
+        continue;
+
+      // If we found any real operation, function has a body
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
 VMProgram *generate_code(CFG **cfgs, int cfg_count) {
   if (!cfgs || cfg_count <= 0)
     return NULL;
@@ -416,6 +445,11 @@ VMProgram *generate_code(CFG **cfgs, int cfg_count) {
   for (int i = 0; i < cfg_count; i++) {
     if (!cfgs[i])
       continue;
+
+    // Skip functions without body (function prototypes only)
+    if (!function_has_body(cfgs[i])) {
+      continue;
+    }
 
     FunctionContext *ctx = create_function_context(program, cfgs[i]->function);
     if (!ctx) {

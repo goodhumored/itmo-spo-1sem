@@ -75,15 +75,8 @@ void print_program_listing(VMProgram *program, FILE *out) {
     fprintf(out, "; Generated assembly listing\n");
     fprintf(out, "; Program listing for virtual machine\n\n");
 
-    // Calculate total data size
-    int data_size = 0;
-    for (int i = 0; i < program->data_item_count; i++) {
-        data_size += program->data_items[i].size;
-    }
-
-    // Print data section
+    // Print data items without section header
     if (program->data_item_count > 0) {
-        fprintf(out, "[section name=_data, bank=RAM]\n");
         for (int i = 0; i < program->data_item_count; i++) {
             VMDataItem *item = &program->data_items[i];
             fprintf(out, "%s: ", item->name);
@@ -146,10 +139,10 @@ void print_program_listing(VMProgram *program, FILE *out) {
         }
         fprintf(out, "\n");
     }
-
-    // Print code section with offset address
-    fprintf(out, "[section name=_code, bank=RAM, address=%d]\n", data_size);
-
+    
+    // Печатаем секцию кода
+    fprintf(out, ".code\n");
+    
     // Печатаем метки и инструкции
     int current_address = 0;
     for (int i = 0; i < program->instruction_count; i++) {
@@ -177,10 +170,7 @@ void print_program_listing(VMProgram *program, FILE *out) {
         fprintf(out, "\n");
         current_address++;
     }
-
-    // Add HALT at the end of main code section
-    fprintf(out, "    HALT\n");
-
+    
     fprintf(out, "\n");
 }
 

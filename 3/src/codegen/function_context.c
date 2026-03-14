@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+static uint32_t next_ram_address = 0x1000;
+
 FunctionContext *create_function_context(VMProgram *program,
                                          Function *function) {
   FunctionContext *ctx = malloc(sizeof(FunctionContext));
@@ -27,6 +29,8 @@ FunctionContext *create_function_context(VMProgram *program,
       ctx->local_vars[i].offset = function->local_vars[i]->offset;
       ctx->local_vars[i].reg = R0;
       ctx->local_vars[i].in_register = false;
+      ctx->local_vars[i].is_initialized = false;
+      ctx->local_vars[i].ram_address = 0;
     }
   } else {
     ctx->local_vars = NULL;
@@ -70,7 +74,6 @@ VMRegister get_variable_register(FunctionContext *ctx, const char *var_name) {
   for (int i = 0; i < ctx->local_var_count; i++) {
     if (strcmp(ctx->local_vars[i].name, var_name) == 0) {
       if (!ctx->local_vars[i].in_register) {
-
         ctx->local_vars[i].reg = allocate_register(&ctx->reg_allocator);
         ctx->local_vars[i].in_register = true;
       }
@@ -81,7 +84,6 @@ VMRegister get_variable_register(FunctionContext *ctx, const char *var_name) {
   for (int i = 0; i < ctx->arg_count; i++) {
     if (strcmp(ctx->args[i].name, var_name) == 0) {
       if (!ctx->args[i].in_register) {
-
         ctx->args[i].reg = allocate_register(&ctx->reg_allocator);
         ctx->args[i].in_register = true;
       }
@@ -92,6 +94,17 @@ VMRegister get_variable_register(FunctionContext *ctx, const char *var_name) {
   return R0;
 }
 
+void mark_variable_initialized(FunctionContext *ctx, const char *var_name) {
+    if (!ctx || !var_name) return;
+
+    for (int i = 0; i < ctx->local_var_count; i++) {
+        if (strcmp(ctx->local_vars[i].name, var_name) == 0) {
+            ctx->local_vars[i].is_initialized = true;
+            return;
+        }
+    }
+}
+
 int64_t get_variable_stack_offset(FunctionContext *ctx, const char *var_name) {
   for (int i = 0; i < ctx->local_var_count; i++) {
     if (strcmp(ctx->local_vars[i].name, var_name) == 0) {
@@ -99,6 +112,15 @@ int64_t get_variable_stack_offset(FunctionContext *ctx, const char *var_name) {
     }
   }
   return -1;
+}
+
+uint32_t get_variable_ram_address(FunctionContext *ctx, const char *var_name) {
+  for (int i = 0; i < ctx->local_var_count; i++) {
+    if (strcmp(ctx->local_vars[i].name, var_name) == 0) {
+      return ctx->local_vars[i].ram_address;
+    }
+  }
+  return 0;
 }
 
 VMRegister get_temp_register(FunctionContext *ctx, int temp_id) {

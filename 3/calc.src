@@ -1,0 +1,34 @@
+void writeByte(byte b);
+byte readByte();
+
+void main() {
+    int acc = 0;
+    byte op;
+    byte digit;
+    int operand;
+
+    while (1) {
+        op = readByte();    // Считываем оператор
+        digit = readByte(); // Считываем цифру
+
+        // Преобразуем символ цифры в числовое значение (например '5' -> 5)
+        operand = digit - "0";
+
+        // Выполняем операцию в зависимости от оператора
+        if (op == "+") {
+          acc = acc + operand;
+        }
+        if (op == "-") {
+          acc = acc - operand;
+        }
+        if (op == "*") {
+          acc = acc * operand;
+        }
+        if (op == "/") {
+          acc = acc / operand;
+        }
+
+        // Выводим результат
+        writeByte(acc);
+    }
+}

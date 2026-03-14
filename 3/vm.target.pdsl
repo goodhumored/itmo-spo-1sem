@@ -177,8 +177,8 @@ instructions:
 
   /* CALL addr */
   instruction call = { 10000100, imm32 as addr } {
- //   sp = sp - 4;
- //   RAM[sp] = ip + 5;
+    sp = sp - 4;
+    RAM[sp] = ip + 5;
     ip = addr;
   };
 

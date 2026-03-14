@@ -57,15 +57,16 @@ void generate_expression(FunctionContext *ctx, ASTNode *expr,
                         vm_create_immediate_operand(num_value));
     }
   } else if (strcmp(expr->type, "identifier") == 0 && expr->value) {
-    int64_t var_offset = get_variable_stack_offset(ctx, expr->value);
-    if (var_offset >= 0) {
+    int64_t offset = get_variable_stack_offset(ctx, expr->value);
+    if (offset != 0) {
       add_instruction(ctx->program, VM_LOAD, vm_create_register_operand(target_reg),
-                      vm_create_bp_offset_operand(-var_offset));
+                      vm_create_bp_offset_operand(offset));
     } else {
-      VMRegister var_reg = get_variable_register(ctx, expr->value);
-      if (var_reg != target_reg) {
-        add_instruction(ctx->program, VM_MOV, vm_create_register_operand(target_reg),
-                        vm_create_register_operand(var_reg));
+      // Static/global variable with fixed RAM address
+      uint32_t var_ram_addr = get_variable_ram_address(ctx, expr->value);
+      if (var_ram_addr > 0) {
+        add_instruction(ctx->program, VM_LOAD, vm_create_register_operand(target_reg),
+                        vm_create_memory_operand(var_ram_addr));
       }
     }
   } else if (strcmp(expr->type, AST_BINARY) == 0 && expr->child_count >= 2) {
@@ -76,6 +77,7 @@ void generate_expression(FunctionContext *ctx, ASTNode *expr,
     VMRegister left_reg = allocate_register(&ctx->reg_allocator);
     VMRegister right_reg = allocate_register(&ctx->reg_allocator);
 
+    printf("binary op '%s': left_reg=%d, right_reg=%d\n", expr->value, left_reg, right_reg);
     generate_expression(ctx, left, left_reg);
 
     generate_expression(ctx, right, right_reg);
@@ -128,6 +130,8 @@ void generate_expression(FunctionContext *ctx, ASTNode *expr,
       add_instruction(ctx->program, VM_CALL,
                       vm_create_label_operand(expr->children[0]->value),
                       vm_create_operand());
+
+      // Result is in R0 after call, copy to target_reg if needed
       if (target_reg != R0) {
         add_instruction(ctx->program, VM_MOV,
                         vm_create_register_operand(target_reg),

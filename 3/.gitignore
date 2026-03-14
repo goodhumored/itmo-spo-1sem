@@ -1,3 +1,21 @@
 build/*.o
 build/codegen/*.o
 program.asm
+
+# Binary files and tools
+tools/
+*.ptptb
+*.exe
+*.dll
+
+# Output files from assembly
+out.ptptb
+disasmListing.txt
+
+# Temporary files
+util/
+*.tmp
+tmp.txt
+
+# macOS
+.DS_Store

@@ -10,6 +10,8 @@ typedef struct {
     int offset;
     VMRegister reg;
     bool in_register;
+    bool is_initialized;
+    uint32_t ram_address;
 } LocalVarMapping;
 
 typedef struct {
@@ -36,7 +38,9 @@ typedef struct {
 FunctionContext *create_function_context(VMProgram *program, Function *function);
 void free_function_context(FunctionContext *ctx);
 VMRegister get_variable_register(FunctionContext *ctx, const char *var_name);
+void mark_variable_initialized(FunctionContext *ctx, const char *var_name);
 int64_t get_variable_stack_offset(FunctionContext *ctx, const char *var_name);
+uint32_t get_variable_ram_address(FunctionContext *ctx, const char *var_name);
 VMRegister get_temp_register(FunctionContext *ctx, int temp_id);
 void free_temp_register(FunctionContext *ctx, int temp_id);
 
