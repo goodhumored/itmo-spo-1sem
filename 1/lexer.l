@@ -51,6 +51,7 @@
 "/"         { return '/'; }
 "%"         { return '%'; }
 "<"         { return '<'; }
+"=="         { return EQEQ; }
 ">"         { return '>'; }
 "!"         { return '!'; }
 "&"         { return '&'; }

@@ -28,6 +28,7 @@ ASTNode *root = NULL;
 
 %token BOOL_TYPE BYTE_TYPE INT_TYPE UINT_TYPE LONG_TYPE ULONG_TYPE CHAR_TYPE STRING_TYPE
 %token IF ELSE WHILE DO BREAK
+%token EQEQ
 
 %type <node> source sourceItem funcDef funcSignature argDefList argDef typeRef builtinType
 %type <node> statement varDecl varList varItem ifStmt block statementList
@@ -37,7 +38,7 @@ ASTNode *root = NULL;
 %left '|'
 %left '^'
 %left '&'
-%left '<' '>'
+%left '<' '>' EQEQ
 %left '+' '-'
 %left '*' '/' '%'
 %right '!' '~' UNARY
@@ -213,6 +214,7 @@ expr:
     | expr '/' expr { $$ = create_node("binary", "/"); add_child($$, $1); add_child($$, $3); }
     | expr '%' expr { $$ = create_node("binary", "%"); add_child($$, $1); add_child($$, $3); }
     | expr '<' expr { $$ = create_node("binary", "<"); add_child($$, $1); add_child($$, $3); }
+    | expr EQEQ expr { $$ = create_node("binary", "=="); add_child($$, $1); add_child($$, $3); }
     | expr '>' expr { $$ = create_node("binary", ">"); add_child($$, $1); add_child($$, $3); }
     | expr '&' expr { $$ = create_node("binary", "&"); add_child($$, $1); add_child($$, $3); }
     | expr '|' expr { $$ = create_node("binary", "|"); add_child($$, $1); add_child($$, $3); }

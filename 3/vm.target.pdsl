@@ -1,0 +1,277 @@
+architecture vm {
+
+  /* 
+   * Виртуальная машина для лабораторной работы #3
+   * Набор инструкций: MOV, ADD, SUB, MUL, DIV, CMP
+   *                 JMP, JE, JNE, JL, JG
+   *                 PUSH, POP, CALL, RET
+   *                 LOAD, STORE, HALT
+   */
+
+registers:
+    storage r0[32];
+    storage r1[32];
+    storage r2[32];
+    storage r3[32];
+    storage r4[32];
+    storage r5[32];
+    storage r6[32];
+    storage r7[32];
+
+    storage ip[32];
+    storage sp[32];
+    storage zf[32];
+    storage sf[32];
+
+    view R0 = r0;
+    view R1 = r1;
+    view R2 = r2;
+    view R3 = r3;
+    view R4 = r4;
+    view R5 = r5;
+    view R6 = r6;
+    view R7 = r7;
+    view IP = ip;
+    view SP = sp;
+    view ZF = zf;
+    view SF = sf;
+
+memory:
+
+  /* Оперативная память - 64KB адресуемого пространства */
+  range RAM[0x00000..0xfffff] {
+    cell = 8;
+    endianess = big-endian;
+    granularity = 0;
+  }
+
+  range sout[0x00..0x00] {
+      cell = 8;
+      endianess = little-endian;
+      granularity = 0;
+  }
+
+  range sin[0x00..0x00] {
+      cell = 8;
+      endianess = little-endian;
+      granularity = 0;
+  }
+
+
+instructions:
+
+  /* Поля для кодирования */
+  encode imm16 field = immediate[16] data;
+  encode imm32 field = immediate[32] data;
+  encode disp field = immediate[32] data;
+
+  /* Поле регистра */
+  encode reg field = register {
+    R0 = 00000000,
+       R1 = 00000001,
+       R2 = 00000010,
+       R3 = 00000011,
+       R4 = 00000100,
+       R5 = 00000101,
+       R6 = 00000110,
+       R7 = 00000111,
+       
+    SP = 00001000
+  };
+
+  /* --- Инструкции перемещения данных --- */
+
+  /* MOV reg, reg: opcode(8) + reg(8) + reg(8) = 24 = 3 байта */
+  instruction mov_rr = { 00000000, reg as to, reg as from } {
+    to = from;
+    ip = ip + 3;
+  };
+
+  /* MOV reg, imm32: opcode(8) + reg(8) + imm32(32) = 48 = 6 байт */
+  instruction mov_ri = { 00000001, reg as to, imm32 as value } {
+    to = value;
+    ip = ip + 6;
+  };
+
+  /* ADD reg, reg */
+  instruction add_rr = { 00010000, reg as to, reg as from } {
+    to = to + from;
+    ip = ip + 3;
+  };
+
+  /* ADD reg, imm32 */
+  instruction add_ri = { 00010001, reg as to, imm32 as value } {
+    to = to + value;
+    ip = ip + 6;
+  };
+
+  /* SUB reg, reg */
+  instruction sub_rr = { 00100000, reg as to, reg as from } {
+    to = to - from;
+    ip = ip + 3;
+  };
+
+  /* SUB reg, imm32 */
+  instruction sub_ri = { 00100001, reg as to, imm32 as value } {
+    to = to - value;
+    ip = ip + 6;
+  };
+
+  /* MUL reg, reg */
+  instruction mul_rr = { 00110000, reg as to, reg as from } {
+    to = to * from;
+    ip = ip + 3;
+  };
+
+  /* DIV reg, reg */
+  instruction div_rr = { 01000000, reg as to, reg as from } {
+    to = to / from;
+    ip = ip + 3;
+  };
+
+  /* CMP reg, reg */
+  instruction cmp_rr = { 01010000, reg as to, reg as from } {
+    if (to == from) then { ZF = 1; } else { ZF = 0; }
+    if (to < from) then { SF = 1; } else { SF = 0; }
+    ip = ip + 3;
+};
+
+  /* PUSH reg: opcode(8) + reg(8) = 16 = 2 байта */
+  instruction push = { 00100100, reg as src } {
+    sp = sp - 4;
+    RAM[sp] = src;
+    ip = ip + 2;
+  };
+
+  /* POP reg */
+  instruction pop = { 00100101, reg as dst } {
+    dst = RAM[sp];
+    sp = sp + 4;
+    ip = ip + 2;
+  };
+
+  /* JMP addr: opcode(8) + imm32(32) = 40 = 5 байт */
+  instruction jmp = { 11000000, imm32 as addr } {
+    ip = addr;
+  };
+
+  /* JE - jump if equal */
+  instruction je = { 11000001, imm32 as addr } {
+    if (ZF == 1) then { ip = addr; } else { ip = ip + 5; }
+  };
+
+  /* JNE - jump if not equal */
+  instruction jne = { 11000010, imm32 as addr } {
+    if (ZF == 0) then { ip = addr; } else { ip = ip + 5; }
+  };
+
+  /* JL - jump if less */
+  instruction jl = { 11000011, imm32 as addr } {
+    if (SF == 1) then { ip = addr; } else { ip = ip + 5; }
+  };
+
+  /* JG - jump if greater */
+  instruction jg = { 11000100, imm32 as addr } {
+    if (SF == 0 && ZF == 0) then { ip = addr; } else { ip = ip + 5; }
+  };
+
+  /* CALL addr */
+  instruction call = { 10000100, imm32 as addr } {
+ //   sp = sp - 4;
+ //   RAM[sp] = ip + 5;
+    ip = addr;
+  };
+
+  /* RET: opcode(8) + padding(8) = 16 = 2 байта */
+  instruction ret = { 10000101, 00000000 } {
+    ip = RAM[sp];
+    sp = sp + 4;
+  };
+
+  /* LOAD reg, addr: opcode(8) + reg(8) + imm32(32) = 48 = 6 байт */
+  instruction load = { 10100001, reg as dst, imm32 as addr } {
+    dst = RAM[addr];
+    ip = ip + 6;
+  };
+
+  instruction store = { 10100010, reg as src, imm32 as addr } {
+    RAM[addr] = src;
+    ip = ip + 6;
+  };
+
+  /* HALT */
+  instruction halt = { 11111111, 00000000 } {
+  };
+
+  /* sout reg: записать регистр в порт вывода */
+  instruction out = { 11100000, reg as src } {
+      sout[0] = src;
+      ip = ip + 2;
+  };
+
+  /* sin reg: прочитать из порта ввода в регистр */
+  instruction in = { 11100001, reg as dst } {
+      dst = sin[0];
+      ip = ip + 2;
+  };
+
+
+mnemonics:
+
+  /* Форматы вывода */
+  format reg2 is "{1}, {2}";
+  format reg1 is "{1}";
+  format imm1 is "{1}";
+  format reg_mem is "{1}, [{2}]";
+  format mem_reg is "[{2}], {1}";
+  format none is "";
+
+  /* MOV */
+  mnemonic MOV for mov_rr(to, from) reg2,
+           for mov_ri(to, value) reg2;
+
+  /* ADD */
+  mnemonic ADD for add_rr(to, from) reg2,
+           for add_ri(to, value) reg2;
+
+  /* SUB */
+  mnemonic SUB for sub_rr(to, from) reg2,
+           for sub_ri(to, value) reg2;
+
+  /* MUL */
+  mnemonic MUL for mul_rr(to, from) reg2;
+
+  /* DIV */
+  mnemonic DIV for div_rr(to, from) reg2;
+
+  /* CMP */
+  mnemonic CMP for cmp_rr(to, from) reg2;
+
+  /* Переходы */
+  mnemonic JMP for jmp(addr) imm1;
+  mnemonic JE for je(addr) imm1;
+  mnemonic JNE for jne(addr) imm1;
+  mnemonic JL for jl(addr) imm1;
+  mnemonic JG for jg(addr) imm1;
+
+  /* Стек */
+  mnemonic PUSH for push(src) reg1;
+  mnemonic POP for pop(dst) reg1;
+
+  /* Подпрограммы */
+  mnemonic CALL for call(addr) imm1;
+  mnemonic RET for ret() "";
+
+  /* Память */
+  mnemonic LOAD for load(dst, addr) "{1}, {2}";
+  mnemonic STORE for store(addr, src) "{1}, {2}";
+
+  /* Конец */
+  mnemonic HALT for halt() "";
+
+  //IO
+  mnemonic OUT for out(src) reg1;
+  mnemonic IN for in(dst) reg1;
+
+
+}

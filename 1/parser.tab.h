@@ -80,8 +80,9 @@ extern int yydebug;
     WHILE = 275,                   /* WHILE  */
     DO = 276,                      /* DO  */
     BREAK = 277,                   /* BREAK  */
-    UNARY = 278,                   /* UNARY  */
-    THEN = 279                     /* THEN  */
+    EQEQ = 278,                    /* EQEQ  */
+    UNARY = 279,                   /* UNARY  */
+    THEN = 280                     /* THEN  */
   };
   typedef enum yytokentype yytoken_kind_t;
 #endif
@@ -97,7 +98,7 @@ union YYSTYPE
     char *sval;
     ASTNode *node;
 
-#line 101 "parser.tab.h"
+#line 102 "parser.tab.h"
 
 };
 typedef union YYSTYPE YYSTYPE;
