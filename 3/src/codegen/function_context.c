@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define MAX_TEMPS 256
+
 static uint32_t next_ram_address = 0x1000;
 
 FunctionContext *create_function_context(VMProgram *program,
@@ -49,6 +51,17 @@ FunctionContext *create_function_context(VMProgram *program,
     ctx->args = NULL;
   }
 
+  // Initialize temporary variable mapping
+  ctx->temp_count = 0;
+  ctx->max_temps = MAX_TEMPS;
+  ctx->temps = malloc(ctx->max_temps * sizeof(TempMapping));
+  for (int i = 0; i < ctx->max_temps; i++) {
+    ctx->temps[i].temp_id = -1;
+    ctx->temps[i].reg = R0;
+    ctx->temps[i].stack_offset = 0;
+    ctx->temps[i].in_reg = false;
+  }
+
   return ctx;
 }
 
@@ -66,6 +79,7 @@ void free_function_context(FunctionContext *ctx) {
   }
   free(ctx->args);
 
+  free(ctx->temps);
   free(ctx);
 }
 
@@ -124,7 +138,43 @@ uint32_t get_variable_ram_address(FunctionContext *ctx, const char *var_name) {
 }
 
 VMRegister get_temp_register(FunctionContext *ctx, int temp_id) {
-  return allocate_register(&ctx->reg_allocator);
+  // Check if this temp already has a register
+  for (int i = 0; i < ctx->temp_count; i++) {
+    if (ctx->temps[i].temp_id == temp_id && ctx->temps[i].in_reg) {
+      return ctx->temps[i].reg;
+    }
+  }
+
+  // Need to allocate a new register for this temp
+  VMRegister reg = allocate_register(&ctx->reg_allocator);
+
+  // Add to temp mapping array
+  if (ctx->temp_count >= ctx->max_temps) {
+    // Expand temp mapping array
+    ctx->max_temps *= 2;
+    ctx->temps = realloc(ctx->temps, ctx->max_temps * sizeof(TempMapping));
+    for (int i = ctx->temp_count; i < ctx->max_temps; i++) {
+      ctx->temps[i].temp_id = -1;
+      ctx->temps[i].reg = R0;
+      ctx->temps[i].stack_offset = 0;
+      ctx->temps[i].in_reg = false;
+    }
+  }
+
+  ctx->temps[ctx->temp_count].temp_id = temp_id;
+  ctx->temps[ctx->temp_count].reg = reg;
+  ctx->temps[ctx->temp_count].in_reg = true;
+  ctx->temp_count++;
+
+  return reg;
 }
 
-void free_temp_register(FunctionContext *ctx, int temp_id) {}
+void free_temp_register(FunctionContext *ctx, int temp_id) {
+  for (int i = 0; i < ctx->temp_count; i++) {
+    if (ctx->temps[i].temp_id == temp_id && ctx->temps[i].in_reg) {
+      free_register(&ctx->reg_allocator, ctx->temps[i].reg);
+      ctx->temps[i].in_reg = false;
+      return;
+    }
+  }
+}

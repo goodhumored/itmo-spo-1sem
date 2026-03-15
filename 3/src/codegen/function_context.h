@@ -1,41 +1,52 @@
 #ifndef FUNCTION_CONTEXT_H
 #define FUNCTION_CONTEXT_H
 
-#include "register_allocator.h"
-#include "../asm_types.h"
 #include "../../../2/cfg.h"
+#include "../asm_types.h"
+#include "register_allocator.h"
 
 typedef struct {
-    char *name;
-    int offset;
-    VMRegister reg;
-    bool in_register;
-    bool is_initialized;
-    uint32_t ram_address;
+  char *name;
+  int offset;
+  VMRegister reg;
+  bool in_register;
+  bool is_initialized;
+  uint32_t ram_address;
 } LocalVarMapping;
 
 typedef struct {
-    char *name;
-    int index;
-    VMRegister reg;
-    bool in_register;
+  char *name;
+  int index;
+  VMRegister reg;
+  bool in_register;
 } ArgumentMapping;
 
 typedef struct {
-    VMProgram *program;
-    Function *function;
-    LocalVarMapping *local_vars;
-    int local_var_count;
-    ArgumentMapping *args;
-    int arg_count;
-    RegisterAllocator reg_allocator;
-    int stack_offset;
-    int current_address;
-    int next_temp_id;  // для генерации t0, t1, t2, ...
-    int string_idx;    // для генерации уникальных имен строк (str_0, str_1, ...)
+  int temp_id;
+  VMRegister reg;
+  int32_t stack_offset;
+  bool in_reg;
+} TempMapping;
+
+typedef struct {
+  VMProgram *program;
+  Function *function;
+  LocalVarMapping *local_vars;
+  int local_var_count;
+  ArgumentMapping *args;
+  int arg_count;
+  RegisterAllocator reg_allocator;
+  int stack_offset;
+  int current_address;
+  int next_temp_id;
+  int string_idx;
+  TempMapping *temps;
+  int temp_count;
+  int max_temps;
 } FunctionContext;
 
-FunctionContext *create_function_context(VMProgram *program, Function *function);
+FunctionContext *create_function_context(VMProgram *program,
+                                         Function *function);
 void free_function_context(FunctionContext *ctx);
 VMRegister get_variable_register(FunctionContext *ctx, const char *var_name);
 void mark_variable_initialized(FunctionContext *ctx, const char *var_name);
