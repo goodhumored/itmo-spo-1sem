@@ -23,6 +23,10 @@ FunctionContext *create_function_context(VMProgram *program,
   ctx->string_idx = 0;
   free_all_registers(&ctx->reg_allocator);
 
+  // Initialize LSRA structures
+  ctx->var_map = create_variable_map();
+  ctx->lsra_result = NULL;
+
   ctx->local_var_count = function->local_var_count;
   if (ctx->local_var_count > 0) {
     ctx->local_vars = malloc(ctx->local_var_count * sizeof(LocalVarMapping));
@@ -33,6 +37,9 @@ FunctionContext *create_function_context(VMProgram *program,
       ctx->local_vars[i].in_register = false;
       ctx->local_vars[i].is_initialized = false;
       ctx->local_vars[i].ram_address = 0;
+
+      // Register local variable in var_map
+      get_variable_id(ctx->var_map, function->local_vars[i]->name);
     }
   } else {
     ctx->local_vars = NULL;
@@ -46,6 +53,9 @@ FunctionContext *create_function_context(VMProgram *program,
       ctx->args[i].index = function->args[i]->index;
       ctx->args[i].reg = R0;
       ctx->args[i].in_register = false;
+
+      // Register argument in var_map
+      get_variable_id(ctx->var_map, function->args[i]->name);
     }
   } else {
     ctx->args = NULL;
@@ -60,6 +70,14 @@ FunctionContext *create_function_context(VMProgram *program,
     ctx->temps[i].reg = R0;
     ctx->temps[i].stack_offset = 0;
     ctx->temps[i].in_reg = false;
+  }
+
+  // Initialize register cache
+  ctx->reg_cache_count = 0;
+  for (int i = 0; i < MAX_REGISTER_CACHE; i++) {
+    ctx->reg_cache[i].var_name = NULL;
+    ctx->reg_cache[i].reg = R0;
+    ctx->reg_cache[i].has_reg = false;
   }
 
   return ctx;
@@ -80,11 +98,19 @@ void free_function_context(FunctionContext *ctx) {
   free(ctx->args);
 
   free(ctx->temps);
+
+  // Free LSRA structures
+  if (ctx->var_map) {
+    free_variable_map(ctx->var_map);
+  }
+  if (ctx->lsra_result) {
+    lsra_free_result(ctx->lsra_result);
+  }
+
   free(ctx);
 }
 
 VMRegister get_variable_register(FunctionContext *ctx, const char *var_name) {
-
   for (int i = 0; i < ctx->local_var_count; i++) {
     if (strcmp(ctx->local_vars[i].name, var_name) == 0) {
       if (!ctx->local_vars[i].in_register) {
@@ -177,4 +203,124 @@ void free_temp_register(FunctionContext *ctx, int temp_id) {
       return;
     }
   }
+}
+
+void set_temp_register(FunctionContext *ctx, int temp_id, VMRegister reg) {
+  // Check if this temp already exists
+  for (int i = 0; i < ctx->temp_count; i++) {
+    if (ctx->temps[i].temp_id == temp_id) {
+      ctx->temps[i].reg = reg;
+      ctx->temps[i].in_reg = true;
+      return;
+    }
+  }
+
+  // Need to add a new temp entry
+  if (ctx->temp_count >= ctx->max_temps) {
+    // Expand temp mapping array
+    ctx->max_temps *= 2;
+    ctx->temps = realloc(ctx->temps, ctx->max_temps * sizeof(TempMapping));
+    for (int i = ctx->temp_count; i < ctx->max_temps; i++) {
+      ctx->temps[i].temp_id = -1;
+      ctx->temps[i].reg = R0;
+      ctx->temps[i].stack_offset = 0;
+      ctx->temps[i].in_reg = false;
+    }
+  }
+
+  ctx->temps[ctx->temp_count].temp_id = temp_id;
+  ctx->temps[ctx->temp_count].reg = reg;
+  ctx->temps[ctx->temp_count].in_reg = true;
+  ctx->temp_count++;
+}
+
+bool has_temp_register(FunctionContext *ctx, int temp_id) {
+  for (int i = 0; i < ctx->temp_count; i++) {
+    if (ctx->temps[i].temp_id == temp_id && ctx->temps[i].in_reg) {
+      return true;
+    }
+  }
+  return false;
+}
+
+VMRegister get_cached_register(FunctionContext *ctx, const char *var_name) {
+  if (!var_name)
+    return R0;
+    
+  for (int i = 0; i < ctx->reg_cache_count; i++) {
+    if (ctx->reg_cache[i].var_name && 
+        strcmp(ctx->reg_cache[i].var_name, var_name) == 0 &&
+        ctx->reg_cache[i].has_reg) {
+      return ctx->reg_cache[i].reg;
+    }
+  }
+  return R0;  // Not found in cache
+}
+
+void set_cached_register(FunctionContext *ctx, const char *var_name, VMRegister reg) {
+  if (!var_name)
+    return;
+    
+  // Check if already in cache
+  for (int i = 0; i < ctx->reg_cache_count; i++) {
+    if (ctx->reg_cache[i].var_name && strcmp(ctx->reg_cache[i].var_name, var_name) == 0) {
+      ctx->reg_cache[i].reg = reg;
+      ctx->reg_cache[i].has_reg = true;
+      return;
+    }
+  }
+  
+  // Add new entry
+  if (ctx->reg_cache_count < MAX_REGISTER_CACHE) {
+    ctx->reg_cache[ctx->reg_cache_count].var_name = strdup(var_name);
+    ctx->reg_cache[ctx->reg_cache_count].reg = reg;
+    ctx->reg_cache[ctx->reg_cache_count].has_reg = true;
+    ctx->reg_cache_count++;
+  }
+}
+
+void clear_register_cache(FunctionContext *ctx) {
+  for (int i = 0; i < ctx->reg_cache_count; i++) {
+    if (ctx->reg_cache[i].var_name) {
+      free(ctx->reg_cache[i].var_name);
+    }
+    ctx->reg_cache[i].var_name = NULL;
+    ctx->reg_cache[i].reg = R0;
+    ctx->reg_cache[i].has_reg = false;
+  }
+  ctx->reg_cache_count = 0;
+}
+
+// LSRA integration functions
+void perform_lsra(FunctionContext *ctx, CFG *cfg) {
+    if (!ctx || !cfg) return;
+    if (ctx->lsra_result) {
+        lsra_free_result(ctx->lsra_result);
+        ctx->lsra_result = NULL;
+    }
+    printf("\nLSRA for function: %s\n", cfg->function->name);
+    ctx->lsra_result = lsra_allocate(cfg, ctx->var_map, VM_GENERAL_REGISTERS);
+}
+
+void set_lsra_result(FunctionContext *ctx, LSRA_Result *result) {
+    if (!ctx) return;
+    if (ctx->lsra_result) {
+        lsra_free_result(ctx->lsra_result);
+    }
+    ctx->lsra_result = result;
+}
+
+VariableMap* get_variable_map(FunctionContext *ctx) {
+    if (!ctx) return NULL;
+    return ctx->var_map;
+}
+
+LSRA_Result* get_lsra_result(FunctionContext *ctx) {
+    if (!ctx) return NULL;
+    return ctx->lsra_result;
+}
+
+int get_ctx_variable_id(FunctionContext *ctx, const char *var_name) {
+    if (!ctx || !ctx->var_map || !var_name) return -1;
+    return get_variable_id(ctx->var_map, var_name);
 }

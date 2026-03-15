@@ -163,17 +163,22 @@ void print_program_listing(VMProgram *program, FILE *out) {
         // Печатаем инструкцию
         VMInstruction *instr = &program->instructions[i];
         fprintf(out, "    %s", get_instruction_name(instr->type));
-        
+
         if (instr->operand_count > 0) {
             fprintf(out, " ");
             print_operand(instr->operands[0], out);
-            
+
             if (instr->operand_count > 1) {
                 fprintf(out, ", ");
                 print_operand(instr->operands[1], out);
             }
         }
-        
+
+        // Выводим комментарий если есть
+        if (instr->comment) {
+            fprintf(out, "  ; %s", instr->comment);
+        }
+
         fprintf(out, "\n");
         current_address++;
     }

@@ -37,6 +37,9 @@ void free_vm_program(VMProgram *program) {
             }
         }
     }
+    for (int i = 0; i < program->instruction_count; i++) {
+        free(program->instructions[i].comment);
+    }
     free(program->instructions);
 
     for (int i = 0; i < program->data_item_count; i++) {
@@ -80,7 +83,43 @@ void add_instruction(VMProgram *program, VMInstructionType type, VMOperand op1, 
     } else {
         instr->operand_count = 0;
     }
+    instr->comment = NULL;
     printf("added %d-th instr %s\n", program->instruction_count, get_instruction_name(instr->type));
+}
+
+void add_instruction_with_comment(VMProgram *program, VMInstructionType type, VMOperand op1, VMOperand op2, const char *comment) {
+    if (!program) return;
+
+    // Use the same logic as add_instruction
+    if (program->instruction_count >= program->max_instructions) {
+        program->max_instructions = program->max_instructions == 0 ? 16 : program->max_instructions * 2;
+        program->instructions = realloc(program->instructions,
+                                       program->max_instructions * sizeof(VMInstruction));
+    }
+
+    VMInstruction *instr = &program->instructions[program->instruction_count++];
+    instr->type = type;
+
+    if (op1.type != OP_NONE) {
+        instr->operands[0] = op1;
+        instr->operand_count = 1;
+
+        if (op2.type != OP_NONE) {
+            instr->operands[1] = op2;
+            instr->operand_count = 2;
+        }
+    } else {
+        instr->operand_count = 0;
+    }
+
+    // Copy comment if provided
+    if (comment) {
+        instr->comment = strdup(comment);
+    } else {
+        instr->comment = NULL;
+    }
+
+    printf("added %d-th instr %s // %s\n", program->instruction_count, get_instruction_name(instr->type), comment ? comment : "");
 }
 
 void add_data_item(VMProgram *program, const char *name, int32_t *values, int value_count) {

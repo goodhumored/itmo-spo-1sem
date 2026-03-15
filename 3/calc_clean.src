@@ -1,0 +1,31 @@
+void writeByte(byte b);
+byte readByte();
+
+void main() {
+    int acc = 0;
+    byte op;
+    byte digit;
+    int operand;
+
+    while (1) {
+        op = readByte();
+        digit = readByte();
+
+        operand = digit - "0";
+
+        if (op == "+") {
+          acc = acc + operand;
+        }
+        if (op == "-") {
+          acc = acc - operand;
+        }
+        if (op == "*") {
+          acc = acc * operand;
+        }
+        if (op == "/") {
+          acc = acc / operand;
+        }
+
+        writeByte(acc);
+    }
+}

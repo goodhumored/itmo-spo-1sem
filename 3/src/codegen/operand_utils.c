@@ -1,4 +1,5 @@
 #include "operand_utils.h"
+#include "string_utils.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -30,6 +31,19 @@ void init_operand(FunctionContext *ctx, Operand *ir_op, VMRegister target_reg) {
                         vm_create_register_operand(target_reg),
                         vm_create_memory_operand(var_ram_addr));
       }
+    }
+    break;
+  }
+  case OPND_STRING_LITERAL: {
+    // String literal - get the label from string_utils
+    const char *str_label = get_string_label(ir_op->value.name);
+    if (str_label) {
+      // Load string (pointer) from label into register
+      // Assuming the string is stored in memory and we load its address
+      // For simple string comparison, we might want to compare character values
+      add_instruction(ctx->program, VM_LOAD,
+                      vm_create_register_operand(target_reg),
+                      vm_create_label_operand(str_label));
     }
     break;
   }
@@ -74,6 +88,17 @@ VMRegister load_operand_to_reg(FunctionContext *ctx, Operand *ir_op) {
   case OPND_TEMP:
     // Get register for temporary
     return get_temp_register(ctx, ir_op->value.temp_id);
+  case OPND_STRING_LITERAL: {
+    // String literal - allocate a register and load from label
+    VMRegister reg = allocate_register(&ctx->reg_allocator);
+    const char *str_label = get_string_label(ir_op->value.name);
+    if (str_label) {
+      add_instruction(ctx->program, VM_LOAD,
+                      vm_create_register_operand(reg),
+                      vm_create_label_operand(str_label));
+    }
+    return reg;
+  }
   case OPND_LABEL:
   case OPND_UNDEF:
     return R0;

@@ -4,6 +4,8 @@
 #include "../../../2/cfg.h"
 #include "../asm_types.h"
 #include "register_allocator.h"
+#include "liveness.h"
+#include "lsra.h"
 
 typedef struct {
   char *name;
@@ -28,6 +30,14 @@ typedef struct {
   bool in_reg;
 } TempMapping;
 
+// Simple register cache for variables - keeps register assignments alive across operations
+#define MAX_REGISTER_CACHE 256
+typedef struct {
+  char *var_name;
+  VMRegister reg;
+  bool has_reg;
+} RegisterCacheEntry;
+
 typedef struct {
   VMProgram *program;
   Function *function;
@@ -43,6 +53,14 @@ typedef struct {
   TempMapping *temps;
   int temp_count;
   int max_temps;
+
+  // Simple register cache
+  RegisterCacheEntry reg_cache[MAX_REGISTER_CACHE];
+  int reg_cache_count;
+
+  // LSRA structures
+  VariableMap *var_map;
+  LSRA_Result *lsra_result;
 } FunctionContext;
 
 FunctionContext *create_function_context(VMProgram *program,
@@ -54,5 +72,17 @@ int64_t get_variable_stack_offset(FunctionContext *ctx, const char *var_name);
 uint32_t get_variable_ram_address(FunctionContext *ctx, const char *var_name);
 VMRegister get_temp_register(FunctionContext *ctx, int temp_id);
 void free_temp_register(FunctionContext *ctx, int temp_id);
+void set_temp_register(FunctionContext *ctx, int temp_id, VMRegister reg);
+bool has_temp_register(FunctionContext *ctx, int temp_id);
+VMRegister get_cached_register(FunctionContext *ctx, const char *var_name);
+void set_cached_register(FunctionContext *ctx, const char *var_name, VMRegister reg);
+void clear_register_cache(FunctionContext *ctx);
+
+// LSRA integration functions
+void perform_lsra(FunctionContext *ctx, CFG *cfg);
+void set_lsra_result(FunctionContext *ctx, LSRA_Result *result);
+VariableMap* get_variable_map(FunctionContext *ctx);
+LSRA_Result* get_lsra_result(FunctionContext *ctx);
+int get_ctx_variable_id(FunctionContext *ctx, const char *var_name);
 
 #endif

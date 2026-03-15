@@ -1,5 +1,6 @@
 void writeByte(byte b);
 byte readByte();
+int fib(int n);
 
 void main() {
     int acc = 0;
@@ -27,8 +28,22 @@ void main() {
         if (op == "/") {
           acc = acc / operand;
         }
+        if (op == "f") {
+          acc = fib(operand);
+        }
 
         // Выводим результат
         writeByte(acc);
     }
 }
+
+int fib(int n) {
+  int r;
+  if (n<3) {
+    r = 1;
+  } else {
+    r = fib(n-2)+fib(n-1);
+  }
+  return r;
+}
+

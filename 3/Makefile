@@ -23,7 +23,8 @@ MAIN_SRCS = $(SRC_DIR)/main.c $(SRC_DIR)/asm_types.c $(SRC_DIR)/utils.c
 CODEGEN_SRCS = $(CODEGEN_DIR)/register_allocator.c $(CODEGEN_DIR)/function_context.c \
                $(CODEGEN_DIR)/function_gen.c $(CODEGEN_DIR)/operand_utils.c \
                $(CODEGEN_DIR)/operation_gen.c $(CODEGEN_DIR)/block_gen.c \
-	       $(CODEGEN_DIR)/string_utils.c
+	       $(CODEGEN_DIR)/string_utils.c $(CODEGEN_DIR)/liveness.c \
+	       $(CODEGEN_DIR)/lsra.c
 
 MAIN_OBJS = $(MAIN_SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 CODEGEN_OBJS = $(CODEGEN_SRCS:$(CODEGEN_DIR)/%.c=$(BUILD_CODEGEN_DIR)/%.o)

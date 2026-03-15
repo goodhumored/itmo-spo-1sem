@@ -3,6 +3,7 @@
 #include "operation_gen.h"
 #include "operand_utils.h"
 #include "string_utils.h"
+#include "function_context.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -35,6 +36,9 @@ static void generate_function_epilogue(FunctionContext *ctx) {
 void generate_function_code(FunctionContext *ctx, CFG *cfg) {
   if (!ctx || !cfg)
     return;
+
+  // TEMPORARILY DISABLE LSRA to fix register allocator first
+  // perform_lsra(ctx, cfg);
 
   generate_function_prologue(ctx);
 

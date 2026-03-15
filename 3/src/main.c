@@ -93,12 +93,12 @@ int main(int argc, char **argv) {
     }
     
     printf("\nGenerating code...\n");
-    
+
     // Генерируем код
     VMProgram *program = generate_code(cfgs, func_count);
     if (!program) {
         fprintf(stderr, "Error: Failed to generate code\n");
-        
+
         for (int i = 0; i < func_count; i++) {
             free_cfg(cfgs[i]);
         }
@@ -108,9 +108,9 @@ int main(int argc, char **argv) {
         free_ast(root);
         return 1;
     }
-    
+
     printf("Code generation successful.\n");
-    
+
     // Сохраняем ассемблерный листинг
     char listing_file[512];
     snprintf(listing_file, sizeof(listing_file), "%s/program.asm", output_dir);
@@ -122,20 +122,20 @@ int main(int argc, char **argv) {
     } else {
         fprintf(stderr, "Error: Could not write to %s\n", listing_file);
     }
-    
+
     // Освобождаем ресурсы
     free_vm_program(program);
-    
+
     for (int i = 0; i < func_count; i++) {
         free_cfg(cfgs[i]);
     }
     free(cfgs);
     free(functions);
-    
+
     yylex_destroy();
     free_ast(root);
-    
+
     printf("\nDone!\n");
-    
+
     return 0;
 }

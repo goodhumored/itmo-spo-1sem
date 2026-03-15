@@ -1,9 +1,90 @@
 #include "operation_gen.h"
 #include "operand_utils.h"
+#include "../utils.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+
+// Helper: Generate comment string from CFG operation
+static char* generate_operation_comment(Operation *op) {
+    if (!op) return NULL;
+
+    static char comment[256];
+    const char *op_type_str = "";
+
+    switch (op->type) {
+        case OP_ADD: op_type_str = "ADD"; break;
+        case OP_SUB: op_type_str = "SUB"; break;
+        case OP_MUL: op_type_str = "MUL"; break;
+        case OP_DIV: op_type_str = "DIV"; break;
+        case OP_LT: op_type_str = "LT (<)"; break;
+        case OP_GT: op_type_str = "GT (>)"; break;
+        case OP_EQ: op_type_str = "EQ (=)"; break;
+        case OP_STORE: op_type_str = "STORE"; break;
+        case OP_LOAD: op_type_str = "LOAD"; break;
+        case OP_CONST: op_type_str = "CONST"; break;
+        case OP_CALL: op_type_str = "CALL"; break;
+        case OP_JMP: op_type_str = "JMP"; break;
+        case OP_CJMP: op_type_str = "CJMP"; break;
+        case OP_RETURN: op_type_str = "RETURN"; break;
+        case OP_NOP: op_type_str = "NOP"; break;
+        default: op_type_str = "UNKNOWN"; break;
+    }
+
+    // Build comment with operands
+    char op1_str[64] = "";
+    char op2_str[64] = "";
+    char dest_str[64] = "";
+
+    if (op->op1.kind == OPND_VAR) {
+        snprintf(op1_str, sizeof(op1_str), "%s", op->op1.value.name);
+    } else if (op->op1.kind == OPND_CONST) {
+        snprintf(op1_str, sizeof(op1_str), "%lld", op->op1.value.const_val);
+    } else if (op->op1.kind == OPND_TEMP) {
+        snprintf(op1_str, sizeof(op1_str), "t%d", op->op1.value.temp_id);
+    } else if (op->op1.kind == OPND_LABEL) {
+        snprintf(op1_str, sizeof(op1_str), "%s", op->op1.value.name);
+    }
+
+    if (op->op2.kind == OPND_VAR) {
+        snprintf(op2_str, sizeof(op2_str), "%s", op->op2.value.name);
+    } else if (op->op2.kind == OPND_CONST) {
+        snprintf(op2_str, sizeof(op2_str), "%lld", op->op2.value.const_val);
+    } else if (op->op2.kind == OPND_TEMP) {
+        snprintf(op2_str, sizeof(op2_str), "t%d", op->op2.value.temp_id);
+    }
+
+    if (op->dest.kind == OPND_VAR) {
+        snprintf(dest_str, sizeof(dest_str), "%s", op->dest.value.name);
+    } else if (op->dest.kind == OPND_TEMP) {
+        snprintf(dest_str, sizeof(dest_str), "t%d", op->dest.value.temp_id);
+    }
+
+    // Build final comment
+    if (op->type == OP_STORE) {
+        snprintf(comment, sizeof(comment), "%s: %s to %s", op_type_str, op1_str, op2_str);
+    } else if (op->type == OP_CONST) {
+        snprintf(comment, sizeof(comment), "%s: %s to %s", op_type_str, op1_str, dest_str);
+    } else if (op->type >= OP_ADD && op->type <= OP_DIV) {
+        snprintf(comment, sizeof(comment), "%s: %s = %s %s %s", op_type_str, dest_str, op1_str, op_type_str, op2_str);
+    } else if (op->type == OP_CALL) {
+        snprintf(comment, sizeof(comment), "%s: %s", op_type_str, op1_str);
+    } else if (op->type == OP_CJMP) {
+        const char *cmp_str = "";
+        switch (op->cmp_type) {
+            case OP_LT: cmp_str = "LT"; break;
+            case OP_GT: cmp_str = "GT"; break;
+            case OP_EQ: cmp_str = "EQ"; break;
+            default: cmp_str = "?"; break;
+        }
+        snprintf(comment, sizeof(comment), "%s(%s): %s, targets: true=%s, false=%s", op_type_str, cmp_str, op1_str, op->true_target, op->false_target);
+    } else {
+        snprintf(comment, sizeof(comment), "%s", op_type_str);
+    }
+
+    return comment;
+}
 
 // Helper: Generate code for a simple expression (literal or identifier)
 // Note: This is a simplified version for function arguments only.
@@ -48,6 +129,14 @@ void generate_operation(FunctionContext *ctx, Operation *op) {
   if (!op)
     return;
 
+  // Generate comment for this operation
+  char *op_comment = generate_operation_comment(op);
+  int initial_instr_count = ctx->program->instruction_count;
+
+  printf("\n=== Processing operation ===\n");
+  printf("Type: %d, op1.kind=%d, op2.kind=%d, dest.kind=%d\n", op->type, op->op1.kind, op->op2.kind, op->dest.kind);
+  if (op_comment) printf("Comment: %s\n", op_comment);
+
   // Track register allocations for constants (need to free them)
   bool freed_left_const = false;
   bool freed_right_const = false;
@@ -57,23 +146,33 @@ void generate_operation(FunctionContext *ctx, Operation *op) {
   VMRegister right_reg = R1;
 
   // Load operands into registers
-  // For simple operands (const, var, temp), we need to target registers
-  if (op->op1.kind != OPND_UNDEF && op->op1.kind != OPND_LABEL) {
+  // IMPORTANT: For TYPE=STORE, don't load operands!
+  // Source will be loaded in the STORE case itself
+  printf("  DEBUG: op->type=%d (OP_STORE=8), would load op1=%d\n", op->type, OP_STORE, op->op1.kind);
+  if (op->type != OP_STORE && op->op1.kind != OPND_UNDEF && op->op1.kind != OPND_LABEL) {
+    printf("    Loading op1...\n");
     if (op->op1.kind == OPND_VAR) {
       left_reg = get_variable_register(ctx, op->op1.value.name);
+      // Load variable from memory into register
+      init_operand(ctx, &op->op1, left_reg);
     } else if (op->op1.kind == OPND_TEMP) {
       left_reg = get_temp_register(ctx, op->op1.value.temp_id);
+      printf("    Loaded TEMP in reg R%d\n", left_reg);
     } else {
       // Constant - allocate register and load
       left_reg = allocate_register(&ctx->reg_allocator);
       init_operand(ctx, &op->op1, left_reg);
       freed_left_const = true;  // Mark as temporarly allocated
     }
+  } else {
+    printf("    Skipping op1 load (type=%d or op1.kind=%d)\n", op->type, op->op1.kind);
   }
 
-  if (op->op2.kind != OPND_UNDEF && op->op2.kind != OPND_LABEL) {
+  if (op->type != OP_STORE && op->op2.kind != OPND_UNDEF && op->op2.kind != OPND_LABEL) {
     if (op->op2.kind == OPND_VAR) {
       right_reg = get_variable_register(ctx, op->op2.value.name);
+      // Load variable from memory into register
+      init_operand(ctx, &op->op2, right_reg);
     } else if (op->op2.kind == OPND_TEMP) {
       right_reg = get_temp_register(ctx, op->op2.value.temp_id);
     } else {
@@ -87,30 +186,63 @@ void generate_operation(FunctionContext *ctx, Operation *op) {
   // Generate instruction based on operation type
   switch (op->type) {
   case OP_ADD:
-    add_instruction(ctx->program, VM_ADD, vm_create_register_operand(left_reg),
-                    vm_create_register_operand(right_reg));
+    add_instruction_with_comment(ctx->program, VM_ADD, vm_create_register_operand(left_reg),
+                    vm_create_register_operand(right_reg), op_comment);
+    if (op->dest.kind == OPND_TEMP) {
+        set_temp_register(ctx, op->dest.value.temp_id, left_reg);
+    }
     break;
   case OP_SUB:
-    add_instruction(ctx->program, VM_SUB, vm_create_register_operand(left_reg),
-                    vm_create_register_operand(right_reg));
+    add_instruction_with_comment(ctx->program, VM_SUB, vm_create_register_operand(left_reg),
+                    vm_create_register_operand(right_reg), op_comment);
+    if (op->dest.kind == OPND_TEMP) {
+        set_temp_register(ctx, op->dest.value.temp_id, left_reg);
+    }
     break;
   case OP_MUL:
-    add_instruction(ctx->program, VM_MUL, vm_create_register_operand(left_reg),
-                    vm_create_register_operand(right_reg));
+    add_instruction_with_comment(ctx->program, VM_MUL, vm_create_register_operand(left_reg),
+                    vm_create_register_operand(right_reg), op_comment);
+    if (op->dest.kind == OPND_TEMP) {
+        set_temp_register(ctx, op->dest.value.temp_id, left_reg);
+    }
     break;
   case OP_DIV:
-    add_instruction(ctx->program, VM_DIV, vm_create_register_operand(left_reg),
-                    vm_create_register_operand(right_reg));
+    add_instruction_with_comment(ctx->program, VM_DIV, vm_create_register_operand(left_reg),
+                    vm_create_register_operand(right_reg), op_comment);
+    if (op->dest.kind == OPND_TEMP) {
+        set_temp_register(ctx, op->dest.value.temp_id, left_reg);
+    }
     break;
   case OP_LT:
   case OP_GT:
   case OP_EQ:
-    add_instruction(ctx->program, VM_CMP, vm_create_register_operand(left_reg),
-                    vm_create_register_operand(right_reg));
+    add_instruction_with_comment(ctx->program, VM_CMP, vm_create_register_operand(left_reg),
+                    vm_create_register_operand(right_reg), op_comment);
+    if (op->dest.kind == OPND_TEMP) {
+        set_temp_register(ctx, op->dest.value.temp_id, left_reg);
+    }
     break;
   case OP_STORE: // op1 is value, op2 is destination (variable)
-    store_operand(ctx, &op->op2, left_reg);  // Use left_reg instead of R0
-    break;
+  // For STORE, we need to store op1 to op2
+  printf("  DEBUG STORE: op1.kind=%d, op2.kind=%d, left_reg=%d\n", op->op1.kind, op->op2.kind, left_reg);
+  // Use correct register for TEMP from temp mapping
+  if (op->op1.kind == OPND_TEMP) {
+    // TEMP from previous CALCULATION - get register from temp mapping
+    VMRegister temp_reg = get_temp_register(ctx, op->op1.value.temp_id);
+    printf("  STORE: TEMP - using stored register R%d\n", temp_reg);
+    store_operand(ctx, &op->op2, temp_reg);
+  } else if (op->op1.kind == OPND_VAR) {
+    // op1 is a variable - load and store
+    VMRegister src_reg = get_variable_register(ctx, op->op1.value.name);
+    printf("  STORE: VAR - loading then storing, src_reg=R%d\n", src_reg);
+    init_operand(ctx, &op->op1, src_reg);  // Load value from memory
+    store_operand(ctx, &op->op2, src_reg);  // Store value to dest
+  } else {
+    // Constant or other - value is in left_reg
+    printf("  STORE: CONST - storing left_reg\n");
+    store_operand(ctx, &op->op2, left_reg);
+  }
+  break;
   case OP_CONST: // Load constant into register, then store to destination
     // Load constant into left_reg (already allocated above for constants)
     if (op->op1.kind == OPND_CONST) {
@@ -148,6 +280,11 @@ void generate_operation(FunctionContext *ctx, Operation *op) {
       add_instruction(ctx->program, VM_CALL,
                       vm_create_label_operand(op->op1.value.name),
                       vm_create_operand());
+    }
+
+    // Set result register for CALL (standard calling convention: return value in R0)
+    if (op->dest.kind == OPND_TEMP) {
+      set_temp_register(ctx, op->dest.value.temp_id, R0);
     }
     break;
   }
@@ -228,12 +365,18 @@ void generate_operation(FunctionContext *ctx, Operation *op) {
 
   // Store result if needed
   // Note: For arithmetic operations, left_reg contains the result
-  // because the operations are in-place (op1 = op1 op op2)
+  // because the operations are in-place (result is stored in first operand)
+  // We need to store result NOW so that subsequent STORE can use it
   bool result_stored = false;
   if (op->dest.kind != OPND_UNDEF && op->type != OP_STORE && op->type != OP_CONST) {
-    if (op->dest.kind == OPND_VAR &&
-        is_variable_on_stack(ctx, op->dest.value.name)) {
-      store_operand(ctx, &op->dest, left_reg);  // left_reg contains result
+    if (op->dest.kind == OPND_VAR && is_variable_on_stack(ctx, op->dest.value.name)) {
+      // Store result from left_reg immediately
+      store_operand(ctx, &op->dest, left_reg);
+      result_stored = true;
+    } else if (op->dest.kind == OPND_TEMP) {
+      // For TEMP, also store to memory so STORE can load it
+      // This prevents loss of intermediate results
+      store_operand(ctx, &op->dest, left_reg);
       result_stored = true;
     }
   }
@@ -246,4 +389,37 @@ void generate_operation(FunctionContext *ctx, Operation *op) {
   if (freed_right_const) {
     free_register(&ctx->reg_allocator, right_reg);
   }
+
+  int added_instructions = ctx->program->instruction_count - initial_instr_count;
+  printf("Added %d instructions (total: %d)\n", added_instructions, ctx->program->instruction_count);
+
+  // DEBUG: Print details of added instructions
+  printf("  Instructions %d to %d:\n", initial_instr_count + 1, ctx->program->instruction_count);
+  for (int i = initial_instr_count; i < ctx->program->instruction_count; i++) {
+    VMInstruction *instr = &ctx->program->instructions[i];
+    printf("    [%d] %s", i + 1, get_instruction_name(instr->type));
+    if (instr->operand_count > 0) {
+      printf(" ");
+      for (int j = 0; j < instr->operand_count; j++) {
+        if (j > 0) printf(", ");
+        VMOperand op = instr->operands[j];
+        if (op.type == OP_REGISTER) {
+          printf("R%d", op.value.reg);
+        } else if (op.type == OP_IMMEDIATE) {
+          printf("%d", op.value.immediate);
+        } else if (op.type == OP_MEMORY) {
+          printf("[%d]", op.value.address);
+        } else if (op.type == OP_BP_OFFSET) {
+          printf("[BP+%d]", op.value.offset);
+        } else if (op.type == OP_LABEL) {
+          printf("%s", op.value.label);
+        }
+      }
+    }
+    if (instr->comment) {
+      printf("  // %s", instr->comment);
+    }
+    printf("\n");
+  }
+  printf("===============================\n\n");
 }

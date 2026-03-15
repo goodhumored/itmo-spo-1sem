@@ -82,6 +82,7 @@ typedef struct {
     VMInstructionType type;
     VMOperand operands[2];
     int operand_count;
+    char *comment;  // Комментарий для отладки (может быть NULL)
 } VMInstruction;
 
 // Тип элемента данных
@@ -129,6 +130,7 @@ VMProgram* create_vm_program();
 void free_vm_program(VMProgram *program);
 
 void add_instruction(VMProgram *program, VMInstructionType type, VMOperand op1, VMOperand op2);
+void add_instruction_with_comment(VMProgram *program, VMInstructionType type, VMOperand op1, VMOperand op2, const char *comment);
 void add_data_item(VMProgram *program, const char *name, int32_t *values, int value_count);
 void add_data_bytes(VMProgram *program, const char *name, const char *bytes, int size);
 void add_label(VMProgram *program, const char *name, int address);
