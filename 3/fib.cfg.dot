@@ -1,0 +1,12 @@
+digraph CFG_fib {
+    node [shape=box, style=filled, fillcolor=lightblue];
+    rankdir=TB;
+
+    label="Function: fib : int";
+    labelloc=t;
+
+    args [shape=note, fillcolor=lightyellow, label="Arguments:\nn: int"];
+
+    BB0 [fillcolor=lightgreen, label="BB0\nentry_0\n[ENTRY]\nPredecessors: (none)\nSuccessors: (none)"];
+
+}

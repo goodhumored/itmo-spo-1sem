@@ -20,6 +20,7 @@ registers:
 
     storage ip[32];
     storage sp[32];
+    storage bp[32];
     storage zf[32];
     storage sf[32];
 
@@ -33,6 +34,7 @@ registers:
     view R7 = r7;
     view IP = ip;
     view SP = sp;
+    view BP = bp;
     view ZF = zf;
     view SF = sf;
 

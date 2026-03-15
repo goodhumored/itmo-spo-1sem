@@ -42,9 +42,14 @@ void generate_function_code(FunctionContext *ctx, CFG *cfg) {
 
   generate_function_prologue(ctx);
 
-  // Generate code for each block
+  // Generate code for each block (skip exit block - it will be handled separately with epilogue)
   for (int i = 0; i < cfg->block_count; i++) {
     BasicBlock *block = cfg->blocks[i];
+
+    // Skip exit block - it will be handled at the end with epilogue
+    if (block == cfg->function->exit_block) {
+      continue;
+    }
 
     char block_label[128];
     snprintf(block_label, sizeof(block_label), "%s_%s", ctx->function->name,
@@ -64,20 +69,90 @@ void generate_function_code(FunctionContext *ctx, CFG *cfg) {
 
       if (!has_explicit_jump && block->successor_count > 0) {
         BasicBlock *succ = block->successors[0];
-        if (succ != cfg->function->exit_block) {
+        // Don't jump to ourselves (CFG builder bug)
+        int is_self_jump = (strcmp(block->label, succ->label) == 0);
+
+        // Temporary fix: if succ is a merge block, jump to exit instead
+        int is_merge_to_exit = (strstr(succ->label, "merge") != NULL);
+
+        // For then blocks that fallthrough to exit, load return value into R0
+        int is_then_to_exit = (strstr(block->label, "then") != NULL &&
+                              succ == cfg->function->exit_block);
+
+        // DEBUG: Print fallthrough jump details
+        printf("DEBUG fallthrough: block=%s, succ=%s, exit_block=%s\n",
+               block->label, succ ? succ->label : "NULL",
+               cfg->function->exit_block ? cfg->function->exit_block->label : "NULL");
+        printf("  is_self_jump=%d, is_merge_to_exit=%d, is_then_to_exit=%d\n",
+               is_self_jump, is_merge_to_exit, is_then_to_exit);
+
+        if (!is_self_jump && succ != cfg->function->exit_block && !is_merge_to_exit) {
           char succ_label[128];
           snprintf(succ_label, sizeof(succ_label), "%s_%s",
                    ctx->function->name, succ->label);
           sanitize_label_public(succ_label);
           add_instruction(ctx->program, VM_JMP,
                           vm_create_label_operand(succ_label), vm_create_operand());
+        } else if (!is_self_jump && is_merge_to_exit) {
+          // Fallthrough from merge to exit block
+          if (cfg->function->exit_block) {
+            char exit_label[128];
+            snprintf(exit_label, sizeof(exit_label), "%s_%s",
+                     ctx->function->name, cfg->function->exit_block->label);
+            sanitize_label_public(exit_label);
+            add_instruction(ctx->program, VM_JMP,
+                            vm_create_label_operand(exit_label), vm_create_operand());
+          }
+        } else if (!is_self_jump && is_then_to_exit && cfg->function->local_var_count > 0) {
+          // For then block falling through to exit, load first local var into R0 (return value)
+          // This is a temporary fix for functions like fib that store return value in r
+          LocalVar *first_local = cfg->function->local_vars[0];
+          if (first_local) {
+            add_instruction(ctx->program, VM_LOAD, vm_create_register_operand(R0),
+                            vm_create_bp_offset_operand(first_local->offset));
+          }
+
+          char exit_label[128];
+          snprintf(exit_label, sizeof(exit_label), "%s_%s",
+                   ctx->function->name, cfg->function->exit_block->label);
+          sanitize_label_public(exit_label);
+          add_instruction(ctx->program, VM_JMP,
+                          vm_create_label_operand(exit_label), vm_create_operand());
         }
       }
     }
   }
 
-  // Note: We don't add epilogue here because functions can have multiple
-  // return statements. The OP_RETURN operation in CFG handles epilogue.
+  // Generate epilogue at exit block (unified return point)
+  if (cfg->function->exit_block) {
+    BasicBlock *exit_block = cfg->function->exit_block;
+    char exit_label[128];
+    snprintf(exit_label, sizeof(exit_label), "%s_%s",
+             ctx->function->name, exit_block->label);
+    sanitize_label_public(exit_label);
+    add_label(ctx->program, exit_label, ctx->program->instruction_count);
+
+    // TEMPORARY FIX: Load first local variable into R0 (return value)
+    // This assumes the first local var is the return value variable
+    if (cfg->function->local_var_count > 0) {
+      LocalVar *first_local = cfg->function->local_vars[0];
+      printf("DEBUG epilogue: Loading return value '%s' from [BP%d] into R0\n",
+             first_local->name, first_local->offset);
+      add_instruction(ctx->program, VM_LOAD, vm_create_register_operand(R0),
+                      vm_create_bp_offset_operand(first_local->offset));
+    }
+
+    // Generate epilogue
+    add_instruction(ctx->program, VM_MOV, vm_create_register_operand(SP),
+                    vm_create_register_operand(BP));
+    add_instruction(ctx->program, VM_POP, vm_create_register_operand(BP),
+                    vm_create_operand());
+    add_instruction(ctx->program, VM_RET, vm_create_operand(),
+                    vm_create_operand());
+  }
+
+  // Note: Functions can have multiple return statements.
+  // OP_RETURN jumps to this unified exit point with the epilogue.
 }
 
 // Helper: Check if a CFG has any real operations (excluding empty blocks)

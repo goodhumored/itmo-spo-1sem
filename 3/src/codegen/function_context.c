@@ -146,11 +146,22 @@ void mark_variable_initialized(FunctionContext *ctx, const char *var_name) {
 }
 
 int64_t get_variable_stack_offset(FunctionContext *ctx, const char *var_name) {
+  // First check local variables
   for (int i = 0; i < ctx->local_var_count; i++) {
     if (strcmp(ctx->local_vars[i].name, var_name) == 0) {
       return (int64_t)ctx->local_vars[i].offset;
     }
   }
+
+  // Then check arguments
+  for (int i = 0; i < ctx->arg_count; i++) {
+    if (strcmp(ctx->args[i].name, var_name) == 0) {
+      // Arguments are at positive offsets from BP
+      // First argument is at BP+8 (after return address at BP+4 and old BP at BP)
+      return (int64_t)(8 + ctx->args[i].index * 4);
+    }
+  }
+
   return -1;
 }
 

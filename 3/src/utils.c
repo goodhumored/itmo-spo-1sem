@@ -150,6 +150,9 @@ void print_program_listing(VMProgram *program, FILE *out) {
     // Print code section with offset address
     fprintf(out, "[section name=_code, bank=RAM, address=%d]\n", data_size);
 
+    // Add CALL main at program start (unified entry point)
+    fprintf(out, "    CALL main\n\n");
+
     // Печатаем метки и инструкции
     int current_address = 0;
     for (int i = 0; i < program->instruction_count; i++) {

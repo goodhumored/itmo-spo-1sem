@@ -1,0 +1,10 @@
+digraph CFG_readByte {
+    node [shape=box, style=filled, fillcolor=lightblue];
+    rankdir=TB;
+
+    label="Function: readByte : byte";
+    labelloc=t;
+
+    BB0 [fillcolor=lightgreen, label="BB0\nentry_0\n[ENTRY]\nPredecessors: (none)\nSuccessors: (none)"];
+
+}

@@ -124,50 +124,6 @@ static void generate_simple_expression(FunctionContext *ctx, ASTNode *expr, VMRe
   }
   // Note: Binary expressions, function calls, etc. should already be
   // processed into temporaries by CFG builder at this point.
-  // DEBUG: Print actual node type
-  printf("    DEBUG generate_simple_expression: expr->type='%s', value='%s', child_count=%d\n",
-         expr->type, expr->value ? expr->value : "NULL", expr->child_count);
-
-  // Handle binary expressions (e.g., n-2, n+1 for function arguments)
-  // Note: CFG builder uses 'binary' type, not 'binaryExpr'
-  if (strcmp(expr->type, "binary") == 0) {
-    printf("      BINARY EXPRESSION DETECTED: op='%s'\n", expr->value);
-    ASTNode *left = expr->children[0];
-    ASTNode *right = expr->children[1];
-    const char *op = expr->value;
-
-    // Generate code for left operand
-    printf("      Generating left operand (type=%s) into R%d\n", left->type, target_reg);
-    generate_simple_expression(ctx, left, target_reg);
-
-    // Allocate register for right operand
-    VMRegister right_reg = allocate_register(&ctx->reg_allocator);
-    printf("      Generating right operand (type=%s) into R%d\n", right->type, right_reg);
-    generate_simple_expression(ctx, right, right_reg);
-
-    // Perform the operation
-    VMInstructionType instr_type = VM_MOV;
-
-    if (strcmp(op, "+") == 0) {
-      instr_type = VM_ADD;
-    } else if (strcmp(op, "-") == 0) {
-      instr_type = VM_SUB;
-    } else if (strcmp(op, "*") == 0) {
-      instr_type = VM_MUL;
-    } else if (strcmp(op, "/") == 0) {
-      instr_type = VM_DIV;
-    }
-
-    if (instr_type != VM_MOV) {
-      printf("      Emitting %s R%d, R%d\n", (instr_type == VM_ADD ? "ADD" : instr_type == VM_SUB ? "SUB" : instr_type == VM_MUL ? "MUL" : "DIV"),
-             target_reg, right_reg);
-      add_instruction(ctx->program, instr_type,
-                      vm_create_register_operand(target_reg),
-                      vm_create_register_operand(right_reg));
-    }
-
-    free_register(&ctx->reg_allocator, right_reg);
-  }
 }
 
 void generate_operation(FunctionContext *ctx, Operation *op) {
@@ -282,16 +238,9 @@ void generate_operation(FunctionContext *ctx, Operation *op) {
     printf("  STORE: VAR - loading then storing, src_reg=R%d\n", src_reg);
     init_operand(ctx, &op->op1, src_reg);  // Load value from memory
     store_operand(ctx, &op->op2, src_reg);  // Store value to dest
-  } else if (op->op1.kind == OPND_CONST) {
-    // Константа - загружаем в регистр и сохраняем
-    int32_t const_val = (int32_t)op->op1.value.const_val;
-    printf("  STORE: CONST %d - loading then storing\n", const_val);
-    add_instruction(ctx->program, VM_MOV, vm_create_register_operand(R0),
-                    vm_create_immediate_operand(const_val));
-    store_operand(ctx, &op->op2, R0);  // Store value to dest
   } else {
-    // Something else - value should be in left_reg if possible
-    printf("  STORE: OTHER - storing left_reg\n");
+    // Constant or other - value is in left_reg
+    printf("  STORE: CONST - storing left_reg\n");
     store_operand(ctx, &op->op2, left_reg);
   }
   break;
