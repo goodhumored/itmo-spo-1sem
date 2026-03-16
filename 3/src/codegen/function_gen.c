@@ -57,70 +57,7 @@ void generate_function_code(FunctionContext *ctx, CFG *cfg) {
     sanitize_label_public(block_label);
     add_label(ctx->program, block_label, ctx->program->instruction_count);
 
-    generate_block(ctx, block);
-
-    // Add explicit fallthrough jump only if:
-    // - Block has successors
-    // - Last operation is not a JMP or CJMP (or it doesn't have next_target)
-    if (block->op_count > 0) {
-      Operation *last_op = block->operations[block->op_count - 1];
-      bool has_explicit_jump = (last_op->type == OP_JMP || last_op->type == OP_CJMP ||
-                                last_op->next_target != NULL);
-
-      if (!has_explicit_jump && block->successor_count > 0) {
-        BasicBlock *succ = block->successors[0];
-        // Don't jump to ourselves (CFG builder bug)
-        int is_self_jump = (strcmp(block->label, succ->label) == 0);
-
-        // Temporary fix: if succ is a merge block, jump to exit instead
-        int is_merge_to_exit = (strstr(succ->label, "merge") != NULL);
-
-        // For then blocks that fallthrough to exit, load return value into R0
-        int is_then_to_exit = (strstr(block->label, "then") != NULL &&
-                              succ == cfg->function->exit_block);
-
-        // DEBUG: Print fallthrough jump details
-        printf("DEBUG fallthrough: block=%s, succ=%s, exit_block=%s\n",
-               block->label, succ ? succ->label : "NULL",
-               cfg->function->exit_block ? cfg->function->exit_block->label : "NULL");
-        printf("  is_self_jump=%d, is_merge_to_exit=%d, is_then_to_exit=%d\n",
-               is_self_jump, is_merge_to_exit, is_then_to_exit);
-
-        if (!is_self_jump && succ != cfg->function->exit_block && !is_merge_to_exit) {
-          char succ_label[128];
-          snprintf(succ_label, sizeof(succ_label), "%s_%s",
-                   ctx->function->name, succ->label);
-          sanitize_label_public(succ_label);
-          add_instruction(ctx->program, VM_JMP,
-                          vm_create_label_operand(succ_label), vm_create_operand());
-        } else if (!is_self_jump && is_merge_to_exit) {
-          // Fallthrough from merge to exit block
-          if (cfg->function->exit_block) {
-            char exit_label[128];
-            snprintf(exit_label, sizeof(exit_label), "%s_%s",
-                     ctx->function->name, cfg->function->exit_block->label);
-            sanitize_label_public(exit_label);
-            add_instruction(ctx->program, VM_JMP,
-                            vm_create_label_operand(exit_label), vm_create_operand());
-          }
-        } else if (!is_self_jump && is_then_to_exit && cfg->function->local_var_count > 0) {
-          // For then block falling through to exit, load first local var into R0 (return value)
-          // This is a temporary fix for functions like fib that store return value in r
-          LocalVar *first_local = cfg->function->local_vars[0];
-          if (first_local) {
-            add_instruction(ctx->program, VM_LOAD, vm_create_register_operand(R0),
-                            vm_create_bp_offset_operand(first_local->offset));
-          }
-
-          char exit_label[128];
-          snprintf(exit_label, sizeof(exit_label), "%s_%s",
-                   ctx->function->name, cfg->function->exit_block->label);
-          sanitize_label_public(exit_label);
-          add_instruction(ctx->program, VM_JMP,
-                          vm_create_label_operand(exit_label), vm_create_operand());
-        }
-      }
-    }
+    generate_block(ctx, cfg, block);
   }
 
   // Generate epilogue at exit block (unified return point)

@@ -24,6 +24,7 @@ struct Argument {
     char *name;
     char *type;
     int index;
+    int offset;  // Stack offset from BP (positive for arguments)
 };
 
 typedef enum {
@@ -31,6 +32,7 @@ typedef enum {
     OPND_CONST,
     OPND_TEMP,
     OPND_LABEL,
+    OPND_STRING_LITERAL,
     OPND_UNDEF
 } OperandKind;
 
@@ -45,7 +47,7 @@ typedef struct Operand {
 
 typedef enum {
     OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_MOD,
-    OP_LT, OP_GT,
+    OP_LT, OP_GT, OP_EQ,
     OP_STORE, OP_LOAD,
     OP_CALL,
     OP_CONST,
@@ -120,6 +122,7 @@ Operand create_const_operand(int64_t val);
 Operand create_var_operand(const char *name);
 Operand create_temp_operand(int temp_id);
 Operand create_label_operand(const char *label);
+Operand create_string_literal_operand(const char *str);
 Operand create_undef_operand();
 void copy_operand(Operand *dest, const Operand *src);
 void free_operand(Operand *op);

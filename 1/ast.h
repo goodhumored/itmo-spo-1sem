@@ -7,7 +7,7 @@
 #define AST_IF            "if"
 #define AST_WHILE         "while"
 #define AST_DO            "do"
-#define AST_BREAK_STMT    "breakStmt"
+#define AST_BREAK_STMT    "break"
 #define AST_EXPR_STMT     "exprStmt"
 #define AST_BLOCK         "block"
 #define AST_VAR_DECL      "varDecl"

@@ -1,0 +1,401 @@
+architecture vm {
+
+registers:
+    storage r0st [32];
+    storage r1st [32];
+    storage r2st [32];
+    storage r3st [32];
+    storage ipst [32];
+    storage spst [32];
+    storage fpst [32];
+    storage cmpst [32];
+    storage bfst [32];
+    storage bf1st [32];
+
+    storage sin [32];
+    storage sout [32];
+
+    view r0 = r0st;
+    view r1 = r1st;
+    view r2 = r2st;
+    view r3 = r3st;
+    view ip = ipst;
+    view sp = spst;
+    view fp = fpst;
+    view cmp = cmpst;
+    view bf = bfst;
+    view bf1 = bf1st;
+
+    view inReg = sin;
+    view outReg = sout;
+
+memory:
+    range constants_ram [0x00000000 .. 0x000fffff] {
+        cell = 8;
+        endianess = little-endian;
+        granularity = 1;
+    }
+
+    range code_ram [0x00000000 .. 0x000fffff] {
+        cell = 8;
+        endianess = little-endian;
+        granularity = 1;
+    }
+
+    range data_ram [0x00000000 .. 0x000fffff] {
+        cell = 8;
+        endianess = little-endian;
+        granularity = 1;
+    }
+
+    range stack_ram [0x00000000 .. 0x000fffff] {
+        cell = 8;
+        endianess = little-endian;
+        granularity = 1;
+    }
+
+instructions:
+    encode imm32 field = immediate [32];
+
+    encode reg field = register {
+        r0 = 0000,
+        r1 = 0001,
+        r2 = 0010,
+        r3 = 0011,
+        ip = 0100,
+        sp = 0101,
+        fp = 0110,
+        cmp = 0111,
+        bf = 1000,
+        bf1 = 1001,
+        inReg = 1010,
+        outReg = 1011
+    };
+
+    instruction mov-reg2reg = { 0000 0000, reg as op1, reg as to, 0000 0000 0000 0000 } {
+        to = op1;
+        ip = ip + 4;
+    };
+
+    instruction mov-imm2reg = { 0000 0001, imm32 as value, reg as to, 0000 } {
+        to = value;
+        ip = ip + 6;
+    };
+
+    instruction ldc = { 0000 0010, reg as to, imm32 as ptr, 0000 } {
+        to = constants_ram:1[ptr]
+           + (constants_ram:1[ptr+1] << 8)
+           + (constants_ram:1[ptr+2] << 16)
+           + (constants_ram:1[ptr+3] << 24);
+        ip = ip + 6;
+    };
+
+    instruction ld = { 0000 0011, imm32 as ptr, reg as to, 0000 } {
+        to = data_ram:1[ptr]
+           + (data_ram:1[ptr+1] << 8)
+           + (data_ram:1[ptr+2] << 16)
+           + (data_ram:1[ptr+3] << 24);
+        ip = ip + 6;
+    };
+
+    instruction st = { 0000 0100, reg as from, imm32 as ptr, 0000 } {
+        data_ram:1[ptr]   = from;
+        data_ram:1[ptr+1] = from >> 8;
+        data_ram:1[ptr+2] = from >> 16;
+        data_ram:1[ptr+3] = from >> 24;
+        ip = ip + 6;
+    };
+
+    instruction add = { 0001 0000, reg as dst, reg as src, 0000 0000 0000 0000 } {
+        let dst_tag = dst & 0xF0000000;
+        let src_tag = src & 0xF0000000;
+        let dst_raw = dst & 0x0FFFFFFF;
+        let src_raw = src & 0x0FFFFFFF;
+
+        if dst_tag == 0x20000000 then { bf = dst_raw & 1; } else { bf = dst_raw; }
+        if src_tag == 0x20000000 then { bf1 = src_raw & 1; } else { bf1 = src_raw; }
+
+        dst = 0x10000000 | ((bf + bf1) & 0x0FFFFFFF);
+        ip = ip + 4;
+    };
+
+    instruction sub = { 0001 0001, reg as dst, reg as src, 0000 0000 0000 0000 } {
+        let dst_tag = dst & 0xF0000000;
+        let src_tag = src & 0xF0000000;
+        let dst_raw = dst & 0x0FFFFFFF;
+        let src_raw = src & 0x0FFFFFFF;
+
+        if dst_tag == 0x20000000 then { bf = dst_raw & 1; } else { bf = dst_raw; }
+        if src_tag == 0x20000000 then { bf1 = src_raw & 1; } else { bf1 = src_raw; }
+
+        dst = 0x10000000 | ((bf - bf1) & 0x0FFFFFFF);
+        ip = ip + 4;
+    };
+
+    instruction mul = { 0001 0010, reg as dst, reg as src, 0000 0000 0000 0000 } {
+        let dst_tag = dst & 0xF0000000;
+        let src_tag = src & 0xF0000000;
+        let dst_raw = dst & 0x0FFFFFFF;
+        let src_raw = src & 0x0FFFFFFF;
+
+        if dst_tag == 0x20000000 then { bf = dst_raw & 1; } else { bf = dst_raw; }
+        if src_tag == 0x20000000 then { bf1 = src_raw & 1; } else { bf1 = src_raw; }
+
+        dst = 0x10000000 | ((bf * bf1) & 0x0FFFFFFF);
+        ip = ip + 4;
+    };
+
+    instruction div = { 0001 0011, reg as dst, reg as src, 0000 0000 0000 0000 } {
+        let dst_tag = dst & 0xF0000000;
+        let src_tag = src & 0xF0000000;
+        let dst_raw = dst & 0x0FFFFFFF;
+        let src_raw = src & 0x0FFFFFFF;
+
+        if dst_tag == 0x20000000 then { bf = dst_raw & 1; } else { bf = dst_raw; }
+        if src_tag == 0x20000000 then { bf1 = src_raw & 1; } else { bf1 = src_raw; }
+
+        if bf1 != 0 then {
+            dst = 0x10000000 | ((bf / bf1) & 0x0FFFFFFF);
+        } else {
+            dst = 0x40000000;
+        }
+        ip = ip + 4;
+    };
+
+    instruction mod = { 0001 0100, reg as dst, reg as src, 0000 0000 0000 0000 } {
+        let dst_tag = dst & 0xF0000000;
+        let src_tag = src & 0xF0000000;
+        let dst_raw = dst & 0x0FFFFFFF;
+        let src_raw = src & 0x0FFFFFFF;
+
+        if dst_tag == 0x20000000 then { bf = dst_raw & 1; } else { bf = dst_raw; }
+        if src_tag == 0x20000000 then { bf1 = src_raw & 1; } else { bf1 = src_raw; }
+
+        if bf1 != 0 then {
+            dst = 0x10000000 | ((bf % bf1) & 0x0FFFFFFF);
+        } else {
+            dst = 0x40000000;
+        }
+        ip = ip + 4;
+    };
+
+    instruction and_t = { 0001 0101, reg as dst, reg as src, 0000 0000 0000 0000 } {
+        bf = (dst & 0x0FFFFFFF) != 0;
+        bf1 = (src & 0x0FFFFFFF) != 0;
+        dst = 0x20000000 | (bf && bf1);
+        ip = ip + 4;
+    };
+
+    instruction or_t = { 0001 0110, reg as dst, reg as src, 0000 0000 0000 0000 } {
+        bf = (dst & 0x0FFFFFFF) != 0;
+        bf1 = (src & 0x0FFFFFFF) != 0;
+        dst = 0x20000000 | (bf || bf1);
+        ip = ip + 4;
+    };
+
+    instruction xor_t = { 0001 0111, reg as dst, reg as src, 0000 0000 0000 0000 } {
+        bf = (dst & 0x0FFFFFFF) != 0;
+        bf1 = (src & 0x0FFFFFFF) != 0;
+        dst = 0x20000000 | (bf ^ bf1);
+        ip = ip + 4;
+    };
+
+    instruction not_t = { 0001 1000, reg as dst, 0000 0000 0000 0000 0000 } {
+        bf = (dst & 0x0FFFFFFF) != 0;
+        dst = 0x20000000 | (!bf);
+        ip = ip + 4;
+    };
+
+    instruction bit_and = { 0001 1001, reg as dst, reg as src, 0000 0000 0000 0000 } {
+        dst = 0x10000000 | ((dst & 0x0FFFFFFF) & (src & 0x0FFFFFFF));
+        ip = ip + 4;
+    };
+
+    instruction bit_or = { 0001 1010, reg as dst, reg as src, 0000 0000 0000 0000 } {
+        dst = 0x10000000 | ((dst & 0x0FFFFFFF) | (src & 0x0FFFFFFF));
+        ip = ip + 4;
+    };
+
+    instruction bit_xor = { 0001 1011, reg as dst, reg as src, 0000 0000 0000 0000 } {
+        dst = 0x10000000 | ((dst & 0x0FFFFFFF) ^ (src & 0x0FFFFFFF));
+        ip = ip + 4;
+    };
+
+    instruction bit_not = { 0001 1100, reg as dst, 0000 0000 0000 0000 0000 } {
+        dst = 0x10000000 | (~(dst & 0x0FFFFFFF) & 0x0FFFFFFF);
+        ip = ip + 4;
+    };
+
+    instruction shift_left = { 0001 1101, reg as dst, reg as src, 0000 0000 0000 0000 } {
+        dst = 0x10000000 | (((dst & 0x0FFFFFFF) << (src & 0x0F)) & 0x0FFFFFFF);
+        ip = ip + 4;
+    };
+
+    instruction shift_right = { 0001 1110, reg as dst, reg as src, 0000 0000 0000 0000 } {
+        dst = 0x10000000 | (((dst & 0x0FFFFFFF) >> (src & 0x0F)) & 0x0FFFFFFF);
+        ip = ip + 4;
+    };
+
+    instruction cmp-reg2reg = { 0010 0000, reg as op1, reg as op2, 0000 0000 0000 0000 } {
+        cmp = (op1 & 0x0FFFFFFF) - (op2 & 0x0FFFFFFF);
+        ip = ip + 4;
+    };
+
+    instruction cmp-reg2imm = { 0010 0001, reg as op1, imm32 as value, 0000 } {
+        cmp = (op1 & 0x0FFFFFFF) - (value & 0x0FFFFFFF);
+        ip = ip + 6;
+    };
+
+    instruction jeq = { 0010 1000, imm32 as to, 0000 0000 } {
+        if cmp == 0 then {
+            ip = to;
+        } else {
+            ip = ip + 6;
+        }
+    };
+
+    instruction jne = { 0010 1001, imm32 as to, 0000 0000 } {
+        if cmp != 0 then {
+            ip = to;
+        } else {
+            ip = ip + 6;
+        }
+    };
+
+    instruction jlt = { 0010 1010, imm32 as to, 0000 0000 } {
+        if cmp < 0 then {
+            ip = to;
+        } else {
+            ip = ip + 6;
+        }
+    };
+
+    instruction jgt = { 0010 1011, imm32 as to, 0000 0000 } {
+        if cmp > 0 then {
+            ip = to;
+        } else {
+            ip = ip + 6;
+        }
+    };
+
+    instruction jle = { 0010 1100, imm32 as to, 0000 0000 } {
+        if cmp <= 0 then {
+            ip = to;
+        } else {
+            ip = ip + 6;
+        }
+    };
+
+    instruction jge = { 0010 1101, imm32 as to, 0000 0000 } {
+        if cmp >= 0 then {
+            ip = to;
+        } else {
+            ip = ip + 6;
+        }
+    };
+
+    instruction jmp = { 0010 1110, imm32 as to, 0000 0000 } {
+        ip = to;
+    };
+
+    instruction push = { 0011 0000, reg as from, 0000 0000 0000 0000 0000 } {
+        sp = sp - 4;
+        stack_ram:1[sp]   = from;
+        stack_ram:1[sp+1] = from >> 8;
+        stack_ram:1[sp+2] = from >> 16;
+        stack_ram:1[sp+3] = from >> 24;
+        ip = ip + 4;
+    };
+
+    instruction pop = { 0011 0001, reg as to, 0000 0000 0000 0000 0000 } {
+        to = stack_ram:1[sp]
+           + (stack_ram:1[sp+1] << 8)
+           + (stack_ram:1[sp+2] << 16)
+           + (stack_ram:1[sp+3] << 24);
+        sp = sp + 4;
+        ip = ip + 4;
+    };
+
+    instruction call = { 0011 0010, imm32 as to, 0000 0000 } {
+        sp = sp - 4;
+        stack_ram:1[sp]   = ip + 6;
+        stack_ram:1[sp+1] = (ip + 6) >> 8;
+        stack_ram:1[sp+2] = (ip + 6) >> 16;
+        stack_ram:1[sp+3] = (ip + 6) >> 24;
+        ip = to;
+    };
+
+    instruction ret = { 0011 0011 1111 1111 1111 1111 0000 0000 } {
+        ip = stack_ram:1[sp]
+           + (stack_ram:1[sp+1] << 8)
+           + (stack_ram:1[sp+2] << 16)
+           + (stack_ram:1[sp+3] << 24);
+        sp = sp + 4;
+    };
+
+    instruction in = { 0011 0100, reg as to, 0000 0000 0000 0000 0000 } {
+        to = inReg;
+        ip = ip + 4;
+    };
+
+    instruction out = { 0011 0101, reg as from, 0000 0000 0000 0000 0000 } {
+        outReg = from;
+        ip = ip + 4;
+    };
+
+    instruction hlt = { 1111 1111 1111 1111 1111 1111 1111 1111 } {
+    };
+
+mnemonics:
+    format plain0 is "";
+    format plain1 is "{1}";
+    format plain2 is "{1}, {2}";
+
+    mnemonic MOV for mov-reg2reg(op1, to) plain2,
+                 for mov-imm2reg(value, to) plain2;
+
+    mnemonic LOAD_CONST for ldc(to, ptr) plain2;
+    mnemonic LD for ld(ptr, to) plain2;
+    mnemonic ST for st(from, ptr) plain2;
+
+    mnemonic ADD for add(dst, src) plain2;
+    mnemonic SUB for sub(dst, src) plain2;
+    mnemonic MUL for mul(dst, src) plain2;
+    mnemonic DIV for div(dst, src) plain2;
+    mnemonic MOD for mod(dst, src) plain2;
+
+    mnemonic AND for and_t(dst, src) plain2;
+    mnemonic OR for or_t(dst, src) plain2;
+    mnemonic XOR for xor_t(dst, src) plain2;
+    mnemonic NOT for not_t(dst) plain1;
+
+    mnemonic BIT_AND for bit_and(dst, src) plain2;
+    mnemonic BIT_OR for bit_or(dst, src) plain2;
+    mnemonic BIT_XOR for bit_xor(dst, src) plain2;
+    mnemonic BIT_NOT for bit_not(dst) plain1;
+
+    mnemonic SHIFT_LEFT for shift_left(dst, src) plain2;
+    mnemonic SHIFT_RIGHT for shift_right(dst, src) plain2;
+
+    mnemonic CMP for cmp-reg2reg(op1, op2) plain2,
+                 for cmp-reg2imm(op1, value) plain2;
+
+    mnemonic JEQ for jeq(to) plain1;
+    mnemonic JNE for jne(to) plain1;
+    mnemonic JLT for jlt(to) plain1;
+    mnemonic JGT for jgt(to) plain1;
+    mnemonic JLE for jle(to) plain1;
+    mnemonic JGE for jge(to) plain1;
+    mnemonic JMP for jmp(to) plain1;
+
+    mnemonic PUSH for push(from) plain1;
+    mnemonic POP for pop(to) plain1;
+
+    mnemonic CALL for call(to) plain1;
+    mnemonic RET for ret() plain0;
+
+    mnemonic IN for in(to) plain1;
+    mnemonic OUT for out(from) plain1;
+
+    mnemonic END for hlt() plain0;
+}

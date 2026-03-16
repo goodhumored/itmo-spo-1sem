@@ -1,13 +1,15 @@
-readByte:
-    IN R0
-    RET 
+[section name=_code1, bank=RAM, start=0x0400]
 
 writeByte:
-    MOV R0, [SP+4]
+    PUSH BP
+    MOV BP, SP
+    MOV R0, [BP+8]
     OUT R0
-
     MOV R0, 10
     OUT R0
+    POP BP
+    RET
 
-    ADD SP, 4
+readByte:
+    IN R0
     RET

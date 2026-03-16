@@ -14,6 +14,7 @@ void init_operand(FunctionContext *ctx, Operand *ir_op, VMRegister target_reg) {
 
   switch (ir_op->kind) {
   case OPND_CONST:
+    printf("const %d\n", ir_op->value.const_val);
     add_instruction(
         ctx->program, VM_MOV, vm_create_register_operand(target_reg),
         vm_create_immediate_operand((int32_t)ir_op->value.const_val));
@@ -36,12 +37,12 @@ void init_operand(FunctionContext *ctx, Operand *ir_op, VMRegister target_reg) {
   }
   case OPND_STRING_LITERAL: {
     // String literal - get the label from string_utils
+    printf("STRING LITERAL: %s\n", ir_op->value.name);
     const char *str_label = get_string_label(ir_op->value.name);
     if (str_label) {
-      // Load string (pointer) from label into register
-      // Assuming the string is stored in memory and we load its address
-      // For simple string comparison, we might want to compare character values
-      add_instruction(ctx->program, VM_LOAD,
+      // Load first character (byte) from string literal address
+      // LOAD reads value from memory address pointed by label
+      add_instruction(ctx->program, VM_MOV,
                       vm_create_register_operand(target_reg),
                       vm_create_label_operand(str_label));
     }
@@ -64,6 +65,8 @@ VMRegister load_operand_to_reg(FunctionContext *ctx, Operand *ir_op) {
   case OPND_CONST: {
     // Allocate a register and load the constant into it
     VMRegister reg = allocate_register(&ctx->reg_allocator);
+    printf("      load_operand_to_reg: OPND_CONST val=%lld -> allocated R%d\n",
+           ir_op->value.const_val, reg);
     add_instruction(
         ctx->program, VM_MOV, vm_create_register_operand(reg),
         vm_create_immediate_operand((int32_t)ir_op->value.const_val));
@@ -89,10 +92,12 @@ VMRegister load_operand_to_reg(FunctionContext *ctx, Operand *ir_op) {
     // Get register for temporary
     return get_temp_register(ctx, ir_op->value.temp_id);
   case OPND_STRING_LITERAL: {
-    // String literal - allocate a register and load from label
+    // String literal - allocate a register and load first byte from label
     VMRegister reg = allocate_register(&ctx->reg_allocator);
     const char *str_label = get_string_label(ir_op->value.name);
     if (str_label) {
+      // Load first character (byte value) from string address
+      // LOAD reads value from memory address pointed by label
       add_instruction(ctx->program, VM_LOAD,
                       vm_create_register_operand(reg),
                       vm_create_label_operand(str_label));

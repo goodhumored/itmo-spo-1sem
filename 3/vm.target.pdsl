@@ -18,6 +18,9 @@ registers:
     storage r6[32];
     storage r7[32];
 
+    storage sin[32];
+    storage sout[32];
+
     storage ip[32];
     storage sp[32];
     storage bp[32];
@@ -38,6 +41,10 @@ registers:
     view ZF = zf;
     view SF = sf;
 
+    view inReg = sin;
+    view outReg = sout;
+
+
 memory:
 
   /* Оперативная память - 64KB адресуемого пространства */
@@ -46,19 +53,6 @@ memory:
     endianess = big-endian;
     granularity = 0;
   }
-
-  range sout[0x00..0x00] {
-      cell = 8;
-      endianess = little-endian;
-      granularity = 0;
-  }
-
-  range sin[0x00..0x00] {
-      cell = 8;
-      endianess = little-endian;
-      granularity = 0;
-  }
-
 
 instructions:
 
@@ -77,8 +71,10 @@ instructions:
        R5 = 00000101,
        R6 = 00000110,
        R7 = 00000111,
-       
-    SP = 00001000
+       SP = 00001000,
+       BP = 00001001,
+       inReg = 1010,
+       outReg = 1011
   };
 
   /* --- Инструкции перемещения данных --- */
@@ -93,6 +89,16 @@ instructions:
   instruction mov_ri = { 00000001, reg as to, imm32 as value } {
     to = value;
     ip = ip + 6;
+  };
+
+  /* MOV reg, [reg+imm32]: opcode(8) + dst(8) + base(8) + imm32(32) = 56 = 7 байт */
+  instruction mov_mem = { 00000010, reg as dst, reg as base, imm32 as disp } {
+    let addr = base + disp;
+    dst = RAM:1[addr]
+        + (RAM:1[addr+1] << 8)
+        + (RAM:1[addr+2] << 16)
+        + (RAM:1[addr+3] << 24);
+    ip = ip + 7;
   };
 
   /* ADD reg, reg */
@@ -138,16 +144,29 @@ instructions:
     ip = ip + 3;
 };
 
+/* CMP reg, imm32 */
+  instruction cmp_ri = { 01010001, reg as to, imm32 as value } {
+    if (to == value) then { ZF = 1; } else { ZF = 0; }
+    if (to < value) then { SF = 1; } else { SF = 0; }
+    ip = ip + 6;
+};
+
   /* PUSH reg: opcode(8) + reg(8) = 16 = 2 байта */
   instruction push = { 00100100, reg as src } {
     sp = sp - 4;
-    RAM[sp] = src;
+    RAM:1[sp]   = src;
+    RAM:1[sp+1] = src >> 8;
+    RAM:1[sp+2] = src >> 16;
+    RAM:1[sp+3] = src >> 24;
     ip = ip + 2;
   };
 
   /* POP reg */
   instruction pop = { 00100101, reg as dst } {
-    dst = RAM[sp];
+    dst = RAM:1[sp]
+        + (RAM:1[sp+1] << 8)
+        + (RAM:1[sp+2] << 16)
+        + (RAM:1[sp+3] << 24);
     sp = sp + 4;
     ip = ip + 2;
   };
@@ -180,25 +199,77 @@ instructions:
   /* CALL addr */
   instruction call = { 10000100, imm32 as addr } {
     sp = sp - 4;
-    RAM[sp] = ip + 5;
+    RAM:1[sp]   = (ip + 5);
+    RAM:1[sp+1] = (ip + 5) >> 8;
+    RAM:1[sp+2] = (ip + 5) >> 16;
+    RAM:1[sp+3] = (ip + 5) >> 24;
     ip = addr;
   };
 
   /* RET: opcode(8) + padding(8) = 16 = 2 байта */
   instruction ret = { 10000101, 00000000 } {
-    ip = RAM[sp];
+    ip = RAM:1[sp]
+       + (RAM:1[sp+1] << 8)
+       + (RAM:1[sp+2] << 16)
+       + (RAM:1[sp+3] << 24);
     sp = sp + 4;
   };
 
   /* LOAD reg, addr: opcode(8) + reg(8) + imm32(32) = 48 = 6 байт */
   instruction load = { 10100001, reg as dst, imm32 as addr } {
-    dst = RAM[addr];
+    dst = RAM:1[addr]
+        + (RAM:1[addr+1] << 8)
+        + (RAM:1[addr+2] << 16)
+        + (RAM:1[addr+3] << 24);
     ip = ip + 6;
   };
 
+  /* LOAD reg, [reg+imm32]: opcode(8) + dst(8) + base(8) + imm32(32) = 56 = 7 байт */
+  instruction load_disp = { 10100101, reg as dst, reg as base, imm32 as disp } {
+    let addr = base + disp;
+    dst = RAM:1[addr]
+        + (RAM:1[addr+1] << 8)
+        + (RAM:1[addr+2] << 16)
+        + (RAM:1[addr+3] << 24);
+    ip = ip + 7;
+  };
+
+  /* LOAD reg, [reg+imm32]: opcode(8) + dst(8) + base(8) + imm32(32) = 56 = 7 байт */
+  instruction load_disp_m = { 10101101, reg as dst, reg as base, imm32 as disp } {
+    let addr = base - disp;
+    dst = RAM:1[addr]
+        + (RAM:1[addr+1] << 8)
+        + (RAM:1[addr+2] << 16)
+        + (RAM:1[addr+3] << 24);
+    ip = ip + 7;
+  };
+
   instruction store = { 10100010, reg as src, imm32 as addr } {
-    RAM[addr] = src;
+    RAM:1[addr]   = src;
+    RAM:1[addr+1] = src >> 8;
+    RAM:1[addr+2] = src >> 16;
+    RAM:1[addr+3] = src >> 24;
     ip = ip + 6;
+  };
+
+  /* STORE [reg+imm32], reg: opcode(8) + src(8) + base(8) + imm32(32) = 56 = 7 байт */
+  instruction store_disp = { 10100110, reg as src, reg as base, imm32 as disp } {
+    let addr = base + disp;
+    RAM:1[addr]   = src;
+    RAM:1[addr+1] = src >> 8;
+    RAM:1[addr+2] = src >> 16;
+    RAM:1[addr+3] = src >> 24;
+    ip = ip + 7;
+  };
+
+  /* STORE [reg+imm32], reg: opcode(8) + src(8) + base(8) + imm32(32) = 56 = 7 байт */
+  instruction store_disp_m = { 10100111, reg as src, reg as base, imm32 as disp } {
+    let addr = base - disp;
+    RAM:1[addr]   = src;
+    RAM:1[addr+1] = src >> 8;
+    RAM:1[addr+2] = src >> 16;
+    RAM:1[addr+3] = src >> 24;
+    ip = ip + 7;
   };
 
   /* HALT */
@@ -207,14 +278,14 @@ instructions:
 
   /* sout reg: записать регистр в порт вывода */
   instruction out = { 11100000, reg as src } {
-      sout[0] = src;
-      ip = ip + 2;
+        outReg = src;
+        ip = ip + 2;
   };
 
   /* sin reg: прочитать из порта ввода в регистр */
   instruction in = { 11100001, reg as dst } {
-      dst = sin[0];
-      ip = ip + 2;
+        dst = inReg;
+        ip = ip + 2;
   };
 
 
@@ -226,10 +297,15 @@ mnemonics:
   format imm1 is "{1}";
   format reg_mem is "{1}, [{2}]";
   format mem_reg is "[{2}], {1}";
+  format reg_mem_disp is "{1}, [{2}+{3}]";
+  format reg_mem_disp_m is "{1}, [{2}-{3}]";
+  format mem_reg_disp is "[{2}+{3}], {1}";
+  format mem_reg_disp_m is "[{2}-{3}], {1}";
   format none is "";
 
   /* MOV */
-  mnemonic MOV for mov_rr(to, from) reg2,
+  mnemonic MOV for mov_mem(dst, base, disp) reg_mem_disp,
+           for mov_rr(to, from) reg2,
            for mov_ri(to, value) reg2;
 
   /* ADD */
@@ -247,7 +323,8 @@ mnemonics:
   mnemonic DIV for div_rr(to, from) reg2;
 
   /* CMP */
-  mnemonic CMP for cmp_rr(to, from) reg2;
+  mnemonic CMP for cmp_rr(to, from) reg2,
+           for cmp_ri(to, value) reg2;
 
   /* Переходы */
   mnemonic JMP for jmp(addr) imm1;
@@ -265,8 +342,12 @@ mnemonics:
   mnemonic RET for ret() "";
 
   /* Память */
-  mnemonic LOAD for load(dst, addr) "{1}, {2}";
-  mnemonic STORE for store(addr, src) "{1}, {2}";
+  mnemonic LOAD for load(dst, addr) "{1}, {2}",
+           for load_disp(dst, base, disp) reg_mem_disp,
+           for load_disp_m(dst, base, disp) reg_mem_disp_m;
+  mnemonic STORE for store(src, addr) "{1}, {2}",
+           for store_disp(src, base, disp) mem_reg_disp,
+           for store_disp_m(src, base, disp) mem_reg_disp_m;
 
   /* Конец */
   mnemonic HALT for halt() "";

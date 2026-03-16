@@ -7,13 +7,16 @@ void main() {
     byte op;
     byte digit;
     int operand;
+    byte zero = "0";
 
     while (1) {
+        writeByte(12 + zero);
+        writeByte(acc + zero);
         op = readByte();    // Считываем оператор
         digit = readByte(); // Считываем цифру
 
         // Преобразуем символ цифры в числовое значение (например '5' -> 5)
-        operand = digit - "0";
+        operand = digit - zero;
 
         // Выполняем операцию в зависимости от оператора
         if (op == "+") {
@@ -31,9 +34,9 @@ void main() {
         if (op == "f") {
           acc = fib(operand);
         }
-
-        // Выводим результат
-        writeByte(acc);
+        if (op == zero) {
+          break;
+        }
     }
 }
 

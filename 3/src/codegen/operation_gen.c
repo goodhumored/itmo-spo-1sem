@@ -94,22 +94,23 @@ static char* generate_operation_comment(Operation *op) {
 static void generate_simple_expression(FunctionContext *ctx, ASTNode *expr, VMRegister target_reg) {
   if (!expr) return;
 
-  if (strcmp(expr->type, "literal") == 0 && expr->value) {
-    const char *value = expr->value;
+  printf("    DEBUG generate_simple_expression: expr->type='%s', value='%s', child_count=%d\n",
+         expr->type, expr->value ? expr->value : "NULL", expr->child_count);
 
-    // String literal - label should exist from collect_string_literals_from_cfg()
-    if (value[0] == '"' && strlen(value) >= 2) {
-        char str_label[256];
-        snprintf(str_label, sizeof(str_label), "str_%d", ctx->string_idx++);
-        add_instruction(ctx->program, VM_MOV, vm_create_register_operand(target_reg),
-                        vm_create_label_operand(str_label));
-    } else {
-        // Numeric literal
-        int32_t num_value = atoi(value);
-        add_instruction(ctx->program, VM_MOV, vm_create_register_operand(target_reg),
-                        vm_create_immediate_operand(num_value));
+  if (strcmp(expr->type, "literal") == 0 && expr->value) {
+    // Load constant literal into register
+    int64_t val;
+    if (sscanf(expr->value, "%lld", (long long *)&val) == 1) {
+      add_instruction(ctx->program, VM_MOV, vm_create_register_operand(target_reg),
+                      vm_create_immediate_operand((int32_t)val));
+      printf("      Loaded literal %lld into R%d\n", val, target_reg);
     }
-  } else if (strcmp(expr->type, "identifier") == 0 && expr->value) {
+    // Note: String literals should be handled separately via collect_string_literals_from_cfg
+    // For function arguments, we don't support string literals yet
+    return;
+  }
+
+  if (strcmp(expr->type, "identifier") == 0 && expr->value) {
     // Variable or temporary
     int64_t offset = get_variable_stack_offset(ctx, expr->value);
     uint32_t var_ram_addr = get_variable_ram_address(ctx, expr->value);
@@ -121,12 +122,12 @@ static void generate_simple_expression(FunctionContext *ctx, ASTNode *expr, VMRe
       add_instruction(ctx->program, VM_LOAD, vm_create_register_operand(target_reg),
                       vm_create_memory_operand(var_ram_addr));
     }
+    return;
   }
+
   // Note: Binary expressions, function calls, etc. should already be
   // processed into temporaries by CFG builder at this point.
-  // DEBUG: Print actual node type
-  printf("    DEBUG generate_simple_expression: expr->type='%s', value='%s', child_count=%d\n",
-         expr->type, expr->value ? expr->value : "NULL", expr->child_count);
+  // But we handle simple binary expressions for function arguments like `n-2`
 
   // Handle binary expressions (e.g., n-2, n+1 for function arguments)
   // Note: CFG builder uses 'binary' type, not 'binaryExpr'
@@ -186,46 +187,28 @@ void generate_operation(FunctionContext *ctx, Operation *op) {
   bool freed_left_const = false;
   bool freed_right_const = false;
 
-  // Allocate registers dynamically
+  // Load operands into registers using helper function
+  // IMPORTANT: For TYPE=STORE, don't load operands!
+  // Source will be loaded in the STORE case itself
+  printf("  DEBUG: op->type=%d (OP_STORE=%d), would load op1=%d\n", op->type, OP_STORE, op->op1.kind);
+
   VMRegister left_reg = R0;
   VMRegister right_reg = R1;
 
-  // Load operands into registers
-  // IMPORTANT: For TYPE=STORE, don't load operands!
-  // Source will be loaded in the STORE case itself
-  printf("  DEBUG: op->type=%d (OP_STORE=8), would load op1=%d\n", op->type, OP_STORE, op->op1.kind);
   if (op->type != OP_STORE && op->op1.kind != OPND_UNDEF && op->op1.kind != OPND_LABEL) {
     printf("    Loading op1...\n");
-    if (op->op1.kind == OPND_VAR) {
-      left_reg = get_variable_register(ctx, op->op1.value.name);
-      // Load variable from memory into register
-      init_operand(ctx, &op->op1, left_reg);
-    } else if (op->op1.kind == OPND_TEMP) {
-      left_reg = get_temp_register(ctx, op->op1.value.temp_id);
-      printf("    Loaded TEMP in reg R%d\n", left_reg);
-    } else {
-      // Constant - allocate register and load
-      left_reg = allocate_register(&ctx->reg_allocator);
-      init_operand(ctx, &op->op1, left_reg);
-      freed_left_const = true;  // Mark as temporarly allocated
-    }
+    left_reg = load_operand_to_reg(ctx, &op->op1);
+    freed_left_const = (op->op1.kind == OPND_CONST || op->op1.kind == OPND_STRING_LITERAL);
+    printf("    Loaded op1 in reg R%d\n", left_reg);
   } else {
     printf("    Skipping op1 load (type=%d or op1.kind=%d)\n", op->type, op->op1.kind);
   }
 
   if (op->type != OP_STORE && op->op2.kind != OPND_UNDEF && op->op2.kind != OPND_LABEL) {
-    if (op->op2.kind == OPND_VAR) {
-      right_reg = get_variable_register(ctx, op->op2.value.name);
-      // Load variable from memory into register
-      init_operand(ctx, &op->op2, right_reg);
-    } else if (op->op2.kind == OPND_TEMP) {
-      right_reg = get_temp_register(ctx, op->op2.value.temp_id);
-    } else {
-      // Constant - allocate register and load
-      right_reg = allocate_register(&ctx->reg_allocator);
-      init_operand(ctx, &op->op2, right_reg);
-      freed_right_const = true;  // Mark as temporarily allocated
-    }
+    printf("    Loading op2 (kind=%d)...\n", op->op2.kind);
+    right_reg = load_operand_to_reg(ctx, &op->op2);
+    freed_right_const = (op->op2.kind == OPND_CONST || op->op2.kind == OPND_STRING_LITERAL);
+    printf("    Loaded op2 in reg R%d\n", right_reg);
   }
 
   // Generate instruction based on operation type
@@ -269,48 +252,25 @@ void generate_operation(FunctionContext *ctx, Operation *op) {
     break;
   case OP_STORE: // op1 is value, op2 is destination (variable)
   // For STORE, we need to store op1 to op2
-  printf("  DEBUG STORE: op1.kind=%d, op2.kind=%d, left_reg=%d\n", op->op1.kind, op->op2.kind, left_reg);
-  // Use correct register for TEMP from temp mapping
-  if (op->op1.kind == OPND_TEMP) {
-    // TEMP from previous CALCULATION - get register from temp mapping
-    VMRegister temp_reg = get_temp_register(ctx, op->op1.value.temp_id);
-    printf("  STORE: TEMP - using stored register R%d\n", temp_reg);
-    store_operand(ctx, &op->op2, temp_reg);
-  } else if (op->op1.kind == OPND_VAR) {
-    // op1 is a variable - load and store
-    VMRegister src_reg = get_variable_register(ctx, op->op1.value.name);
-    printf("  STORE: VAR - loading then storing, src_reg=R%d\n", src_reg);
-    init_operand(ctx, &op->op1, src_reg);  // Load value from memory
-    store_operand(ctx, &op->op2, src_reg);  // Store value to dest
-  } else if (op->op1.kind == OPND_CONST) {
-    // Константа - загружаем в регистр и сохраняем
-    int32_t const_val = (int32_t)op->op1.value.const_val;
-    printf("  STORE: CONST %d - loading then storing\n", const_val);
-    add_instruction(ctx->program, VM_MOV, vm_create_register_operand(R0),
-                    vm_create_immediate_operand(const_val));
-    store_operand(ctx, &op->op2, R0);  // Store value to dest
-  } else {
-    // Something else - value should be in left_reg if possible
-    printf("  STORE: OTHER - storing left_reg\n");
-    store_operand(ctx, &op->op2, left_reg);
+  printf("  DEBUG STORE: op1.kind=%d, op2.kind=%d\n", op->op1.kind, op->op2.kind);
+  // Load op1 into a register
+  VMRegister src_reg = load_operand_to_reg(ctx, &op->op1);
+  printf("  STORE: loaded op1 into R%d\n", src_reg);
+  // Store to destination
+  store_operand(ctx, &op->op2, src_reg);
+  // Free register if it was allocated for const/string literal
+  if (op->op1.kind == OPND_CONST || op->op1.kind == OPND_STRING_LITERAL) {
+    free_register(&ctx->reg_allocator, src_reg);
   }
   break;
   case OP_CONST: // Load constant into register, then store to destination
-    // Load constant into left_reg (already allocated above for constants)
-    if (op->op1.kind == OPND_CONST) {
-      if (!freed_left_const) {
-        // left_reg wasn't allocated for constant, need to allocate now
-        left_reg = allocate_register(&ctx->reg_allocator);
-        freed_left_const = true;
-      }
-      add_instruction(
-          ctx->program, VM_MOV, vm_create_register_operand(left_reg),
-          vm_create_immediate_operand((int32_t)op->op1.value.const_val));
+    // Load constant into register using helper
+    left_reg = load_operand_to_reg(ctx, &op->op1);
+    freed_left_const = true;
 
-      if (op->dest.kind == OPND_VAR &&
-          is_variable_on_stack(ctx, op->dest.value.name)) {
-        store_operand(ctx, &op->dest, left_reg);
-      }
+    if (op->dest.kind == OPND_VAR &&
+        is_variable_on_stack(ctx, op->dest.value.name)) {
+      store_operand(ctx, &op->dest, left_reg);
     }
     break;
   case OP_CALL: {
@@ -365,38 +325,23 @@ void generate_operation(FunctionContext *ctx, Operation *op) {
   case OP_CJMP: {
     // Conditional jump - need to compare and jump
     if (op->true_target && op->false_target) {
-      VMRegister cmp_reg = R0;
-
-      if (op->op1.kind == OPND_CONST) {
-        int64_t const_val = op->op1.value.const_val;
-
-        if (left_reg != R0) {
-          add_instruction(ctx->program, VM_MOV, vm_create_register_operand(R0),
-                          vm_create_immediate_operand((int32_t)const_val));
-          cmp_reg = R0;
-        }
-
+      if (op->op1.kind == OPND_CONST || op->op1.kind == OPND_STRING_LITERAL) {
+        // Direct condition without comparison: while (1), while (0), while ("abc")
+        // Value already loaded in left_reg by load_operand_to_reg()
         add_instruction(ctx->program, VM_CMP,
-                        vm_create_register_operand(cmp_reg),
+                        vm_create_register_operand(left_reg),
                         vm_create_immediate_operand(0));
 
-        if (const_val != 0) {
-          add_instruction(ctx->program, VM_JNE,
-                          vm_create_label_operand(op->true_target),
-                          vm_create_operand());
-          add_instruction(ctx->program, VM_JMP,
-                          vm_create_label_operand(op->false_target),
-                          vm_create_operand());
-        } else {
-          // const_val == 0 (false):
-          add_instruction(ctx->program, VM_JMP,
-                          vm_create_label_operand(op->false_target),
-                          vm_create_operand());
-        }
+        // Runtime check: if value != 0 then true, else false
+        add_instruction(ctx->program, VM_JNE,
+                        vm_create_label_operand(op->true_target),
+                        vm_create_operand());
+        add_instruction(ctx->program, VM_JMP,
+                        vm_create_label_operand(op->false_target),
+                        vm_create_operand());
       } else {
-        // Normal comparison (a > 5)
-        // Operands already loaded in left_reg and right_reg
-        // Comparison already done in OP_LT/OP_GT
+        // Normal comparison from OP_LT/OP_GT/OP_EQ - already done
+        // Comparison result is in flags, just need to jump based on cmp_type
 
         // Determine conditional jump based on cmp_type
         VMInstructionType jump_type = VM_JE;
@@ -429,25 +374,16 @@ void generate_operation(FunctionContext *ctx, Operation *op) {
   case OP_RETURN: {
     // Function return - load return value into R0 and jump to exit block
     if (op->op1.kind != OPND_UNDEF) {
-      if (op->op1.kind == OPND_VAR) {
-        VMRegister ret_reg = get_variable_register(ctx, op->op1.value.name);
-        init_operand(ctx, &op->op1, ret_reg);
-        // Move to R0 (standard calling convention)
-        if (ret_reg != R0) {
-          add_instruction(ctx->program, VM_MOV, vm_create_register_operand(R0),
-                          vm_create_register_operand(ret_reg));
-        }
-      } else if (op->op1.kind == OPND_CONST) {
-        int32_t ret_val = (int32_t)op->op1.value.const_val;
+      // Load operand into register
+      VMRegister ret_reg = load_operand_to_reg(ctx, &op->op1);
+      // Move to R0 (standard calling convention)
+      if (ret_reg != R0) {
         add_instruction(ctx->program, VM_MOV, vm_create_register_operand(R0),
-                        vm_create_immediate_operand(ret_val));
-      } else if (op->op1.kind == OPND_TEMP) {
-        VMRegister ret_reg = get_temp_register(ctx, op->op1.value.temp_id);
-        // Move to R0 (standard calling convention)
-        if (ret_reg != R0) {
-          add_instruction(ctx->program, VM_MOV, vm_create_register_operand(R0),
-                          vm_create_register_operand(ret_reg));
-        }
+                        vm_create_register_operand(ret_reg));
+      }
+      // Free register if it was allocated for const/string literal
+      if (op->op1.kind == OPND_CONST || op->op1.kind == OPND_STRING_LITERAL) {
+        free_register(&ctx->reg_allocator, ret_reg);
       }
     }
 
@@ -484,12 +420,13 @@ void generate_operation(FunctionContext *ctx, Operation *op) {
     }
   }
 
-  // Free temporarily allocated registers for constants
-  // Only free if they weren't saved as the result
-  if (freed_left_const && !result_stored && op->dest.kind != OPND_CONST) {
+  // Free temporarily allocated registers for constants and string literals
+  // Don't free for operations that handle their own register cleanup (STORE, RETURN)
+  if (freed_left_const && !result_stored && op->dest.kind != OPND_CONST &&
+      op->type != OP_STORE && op->type != OP_RETURN) {
     free_register(&ctx->reg_allocator, left_reg);
   }
-  if (freed_right_const) {
+  if (freed_right_const && op->type != OP_STORE && op->type != OP_RETURN) {
     free_register(&ctx->reg_allocator, right_reg);
   }
 
