@@ -1,0 +1,17 @@
+// Вычисление числа Фибоначчи
+// fib(1) = 1, fib(2) = 1, fib(n) = fib(n-2) + fib(n-1)
+int fib(int n) {
+    int r;
+    if (n < 2) {
+        r = 1;
+    } else {
+        r = fib(n - 2);
+        r = r + fib(n - 1);
+    }
+    return r;
+}
+
+int main() {
+    int result;
+    result = fib(10);
+}

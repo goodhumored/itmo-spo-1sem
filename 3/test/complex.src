@@ -1,0 +1,36 @@
+// Сложный пример с вложенными циклами и условиями
+int compute(int x) {
+    int i;
+    int result;
+    i = 0;
+    result = 0;
+
+    while (i < x) {
+        if (i > 5) {
+            result = result + i;
+        } else {
+            if (i < 2) {
+                result = result + 1;
+            } else {
+                result = result + 2;
+            }
+        }
+        i = i + 1;
+    }
+    return result;
+}
+
+int main() {
+    int a;
+    int b;
+    int final;
+
+    a = 10;
+    b = compute(a);
+
+    if (b > 20) {
+        final = b - 10;
+    } else {
+        final = b + 5;
+    }
+}
