@@ -7,15 +7,19 @@ tools/
 *.ptptb
 *.exe
 *.dll
+codegen
 
 # Output files from assembly
 out.ptptb
 disasmListing.txt
+trace.txt
 
 # Temporary files
 util/
 *.tmp
 tmp.txt
+*.dot
 
 # macOS
 .DS_Store
+
